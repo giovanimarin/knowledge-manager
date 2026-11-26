@@ -2,8 +2,6 @@ name: Foundation
 
 on:
   pull_request:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -23,6 +21,10 @@ jobs:
           node-version: 24.22.3
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      - name: Reject deliberately for the ruleset test
+        run: |
+          echo "::error::Intentional failure for Main Protection ruleset 28200918"
+          exit 1
 
   smoke:
     name: Foundation / clean smoke
@@ -76,3 +78,37 @@ jobs:
         with:
           name: foundation-audit
           path: artifacts/audit/
+
+  protection-evidence:
+    name: Main Protection / read-only evidence
+    if: ${{ always() && github.head_ref == 'test/main-protection-28200918' }}
+    needs: [verify, smoke, audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      VERIFY_RESULT: ${{ needs.verify.result }}
+      SMOKE_RESULT: ${{ needs.smoke.result }}
+      AUDIT_RESULT: ${{ needs.audit.result }}
+    steps:
+      - name: Read branch rules and PR merge state
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" --jq '[.[] | select(.ruleset_id == 28200918)]' || true
+          test "$VERIFY_RESULT" = failure
+          test "$SMOKE_RESULT" = success
+          test "$AUDIT_RESULT" = success
+          for attempt in {1..12}; do
+            pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR")"
+            jq '{number,head:.head.sha,base:.base.ref,draft,mergeable,mergeable_state}' <<< "$pr"
+            if jq -e '.base.ref == "main" and .draft == false and .mergeable == true and .mergeable_state == "blocked"' <<< "$pr" >/dev/null; then
+              echo "Intentional required check failure. GitHub reports mergeable_state=blocked."
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
