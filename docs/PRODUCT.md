@@ -14,4 +14,4 @@ Publication -> outbox -> extraction -> changed blocks -> chunk/embed -> atomic i
 ## Acceptance
 Cross-tenant negative tests, ACL revocation including historical context, concurrent editing convergence, idempotent indexing and webhooks, no stale deleted sources, verifiable citations, invalid token/webhook rejection, delivery recovery. CI lint/typecheck/unit/integration/architecture/security/E2E and RAG evaluation. LGPD, accessibility, pt-BR/en, backups, audit and observability. No paid API required for tests; mock providers.
 ## Evidence status
-Prior chat audit was partial: Docmost PageService, AnythingLLM streamChatWithWorkspace, Keycloak OIDCIdentityProvider, Unified Channel types and manager were reported inspected; exact commits and findings must be independently verified. No full clone/test audit completed. Stack is provisional.
+PKG-00 records the four pinned reference revisions, observed behavior, test results, and integration gaps. The technology decisions and acceptance criteria are proposed for review. [Audit evidence](references/verification.md) · [Technology decisions](architecture/technology-selection.md).
