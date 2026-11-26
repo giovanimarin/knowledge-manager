@@ -51,7 +51,8 @@ COPY --from=postgres-base /usr/local/include/postgresql /usr/local/include/postg
 COPY --from=postgres-base /usr/local/lib/postgresql/pgxs /usr/local/lib/postgresql/pgxs
 ADD --checksum=sha256:69f4019389af05dc1c9548deb8628e62878e6e207c03907f2b8af2016472cdaa https://codeload.github.com/pgvector/pgvector/tar.gz/refs/tags/v0.8.2 /tmp/pgvector.tgz
 RUN mkdir /vector && tar -xzf /tmp/pgvector.tgz -C /vector --strip-components=1 \
-    && make -C /vector -j2 CC=musl-gcc OPTFLAGS="" with_llvm=no \
+    && make -C /vector -j2 CC=musl-gcc OPTFLAGS="" PG_CPPFLAGS=-DDISABLE_DISPATCH with_llvm=no \
+    && ! readelf --wide --relocs /vector/vector.so | grep -q IRELATIVE \
     && make -C /vector install DESTDIR=/vector-out OPTFLAGS="" with_llvm=no \
     && cp /vector/LICENSE /vector-out/usr/local/share/postgresql/extension/pgvector.LICENSE
 
