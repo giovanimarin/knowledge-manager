@@ -13,3 +13,9 @@ Cada linha da matriz define requisito → contrato → cenário e negativo. Cada
 Falha bloqueante mantém vermelho, corrige causa e repete. Flake é defeito rastreado, sem skip para satisfazer status. Sem sandbox, marcar integração como pendente sem prometer disponibilidade de produção. Sanitizar evidências, definir acesso/retenção e manter diagnóstico acionável por correlation ID. Sem mídia fictícia ou simulador confundido com uso real.
 
 Candidato → homologação → interno → piloto → geral. SemVer, imagens fixadas, dev/homolog/prod separados e fixtures sem cópia automática de produção. Migrations expand/contract, backup pré-update crítico e flags por grupo shared ou janela dedicated. Parar rollout em regressão, fix-forward ou rollback com verificação de compatibilidade e sem perder escritas novas.
+
+## Evidência exigida desde o PKG-01
+
+Configurar workflows de pull request com checks nomeados e obrigatórios na proteção de `main`. Publicar no PR do PKG-01 os links das execuções do head para smoke em checkout limpo, testes e auditoria/SBOM, apontando os artefatos correspondentes. Demonstrar que check obrigatório ausente ou vermelho impede o merge e registrar a evidência da regra. Os checks internos de G1/G2 permanecem obrigatórios a cada PR aplicável.
+
+G1/G2 locais operam com componentes locais e fixtures, sem credenciais de provedores ou pagamento. G3 registra separadamente resultados locais e medições. Falta de credenciais de sandbox não bloqueia esses PRs quando os gates internos passam, mas a integração permanece pendente de G4; G4/G5 e aprovações pré-rollout bloqueiam a liberação da capacidade afetada. Mock não comprova prontidão da V1. O PR documental PKG-00B tem validações locais registradas, sem workflow runs nem commit statuses no head revisado.

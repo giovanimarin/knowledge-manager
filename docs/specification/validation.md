@@ -28,3 +28,12 @@ A única suíte executada na auditoria anterior foi o recorte de 39 testes no Un
 ## Revisão final e lacunas
 
 Revisar escopo e contratos no PR antes do PKG-01. Valores comerciais, fiscal, provedor, licença, sandboxes, ativos, retenção, capacidade de operação, precisão de governança e metas de desempenho seguem os responsáveis e gates em [limites](scope-boundaries.md). Detalhes reversíveis adotados nesta especificação incluem identificadores C/U/G, estados, CAS e separação dos PRs 11S, 12B e 13S; ficam sujeitos à revisão técnica sem reabrir decisões do workshop.
+
+## Revalidação após a revisão do PR #4
+
+A revisão de `47046f7` foi atendida com contratos por operação e matriz de negações, checks obrigatórios planejados para PKG-01, topologias executáveis no PKG-02, cobertura por capabilityId e aprovações pré-rollout. A consolidação já inclui a auditoria do PR #2. Se houver integração separada desse PR, preservar a documentação consolidada no PKG-00B.
+
+- A comparação com main confirmou os cinco registros normativos intactos e 60 IDs únicos: 59 categorias V1 e AL-09 adiada. A matriz referencia 18 RFs, 10 telas, 10 famílias de contrato, entidades existentes e 18 pacotes com dependências acíclicas e faixas válidas.
+- Scripts locais verificaram 168 links em docs, entre caminhos locais e referências fixadas, e 8 âncoras Markdown locais. `git diff --cached origin/main --check` passou.
+- A comparação com o head revisado confirmou ausência de alterações em decisões, ADRs e demais baselines de arquitetura, tabelas de requisitos e escopo em PRODUCT.md. As mudanças são Markdown.
+- A evidência desta rodada é documental. Checks de branch, smoke, SBOM em CI, isolamento executável e gates de sandbox/produção são entregas futuras.

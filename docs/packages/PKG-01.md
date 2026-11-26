@@ -19,6 +19,10 @@ Pré-requisito: aceite da especificação PKG-00B ou autorização explícita. E
 
 ## Aceite
 
+- Publicar o contrato verificável do smoke, instalação, readiness e restore antes da implementação, com fixtures de sucesso e falha, conforme [C10 e regra geral](../specification/contracts.md#contrato-verificável-antes-da-implementação).
+- Configurar workflows e checks obrigatórios de branch em main. No PR, vincular execuções reais de smoke limpo, testes e auditoria/SBOM ao head, com logs e artefatos. Verificar bloqueio de merge por check ausente ou vermelho conforme [qualidade](../specification/quality.md#evidência-exigida-desde-o-pkg-01).
+- Usar fixtures sintéticas e serviços locais. Sandbox, credenciais de provedores e pagamentos ficam para os gates de integração e rollout. O PKG-02 comprovará isolamento RLS de dois tenants no mesmo DB e implantação dedicated inicial conforme [roadmap](../ROADMAP.md#pré-requisito-de-cada-pacote-e-marcos-híbridos).
+
 - Checkout limpo sobe em Compose por roteiro versionado e confirma readiness API/worker, pgvector, Redis e storage. Parar banco torna readiness indisponível e recuperável.
 - CI executa smoke com fixtures locais e verifica schema/migração, papéis distintos para aplicação/migração e teste de isolamento com dados fictícios. Violação de fronteira e lockfile divergente falham no CI.
 - SBOM de dependências/imagens é revisável. Registrar versões, licenças e exceções aprovadas antes de incorporar dependências. Segredos de exemplo são inertes.

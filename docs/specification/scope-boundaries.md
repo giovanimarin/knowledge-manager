@@ -31,3 +31,16 @@ Os 60 itens do workshop têm disposição registrada. Para execução, permanece
 | Retenção/legal hold, descarte, termos/privacidade e SLA de suporte | responsável/jurídico antes de produção. Defaults aprovados de trial/vínculo/lixeira permanecem; exemplos financeiros e SLA não constituem compromisso. |
 | Hospedagem/volume, capacidade real Ollama, pesos e qualidade de governança, SLOs e assets definitivos | benchmarks de pacote, revisão de produto e operação. Usar tokens e geometria aprovados enquanto assets finais não chegam. |
 | Membros coletivos verificáveis, APIs interativas/revogação real, ACL de origem e fidelidade de formato | verificar capacidades por versão/fornecedor. Quando ausentes, aplicar negação, quarentena, perda explícita ou redirecionamento privado conforme contrato. |
+
+## Aprovações pré-rollout
+
+Registrar decisão, responsável, data, escopo, versão e evidência no relatório de release. Pendência impede rollout da capacidade afetada; PKG-15 consolida o gate antes do piloto comercial e da disponibilidade geral.
+
+| Aprovação | Quando e por quem |
+| --- | --- |
+| Preço, catálogo, PSP/fiscal, impostos e condições contratuais | PKG-12B, antes de cobrança real; produto, financeiro e jurídico. |
+| Licença de cada modelo/peso e SDK, termos e tratamento de dados de fornecedor | Pacote consumidor, antes de incorporar artefato ou habilitar integração; release e jurídico. |
+| Assets visuais definitivos e direitos de uso | PKG-12/15 antes da publicação da marca; produto e responsável pela marca. |
+| Políticas de dados, retenção, descarte, privacidade e termos contratuais | PKG-12/14 antes de entrada de dados reais; produto, privacidade e jurídico. |
+
+Trial mantém **14 dias, 10 colaboradores, 1 GB e R$20 de crédito comercial, sem cartão**, configurável pela plataforma. Aprovação econômica e política comercial cabem ao rollout sem inferir mudança dos defaults. PKG-01 não depende de pagamentos, contratação ou credenciais externas.

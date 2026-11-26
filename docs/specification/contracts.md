@@ -29,3 +29,20 @@ Os códigos abaixo são famílias de contrato para a matriz. Rotas escritas com 
 Eventos usam {eventId,type,schemaVersion,orgId,aggregateId,revision,occurredAt,correlationId,causationId,payload} com IDs/estados e sem conteúdo ou segredos. Eventos: identity.access-changed, content.published, content.withdrawn, source.sync-requested, index.generation-activated, conversation.turn-ready, channel.received, channel.delivery-requested/updated, billing.usage-recorded, platform.tenant-lifecycle-changed. Consumidores aceitam extensões opcionais e registram receipt único por consumidor/evento. Desconhecido incompatível vai para quarentena. Lease expirável, retry exponencial limitado, DLQ e replay auditado com nova validação de política. Em retorno ambíguo de cobrança ou envio, reconciliar antes do replay se o fornecedor não tem idempotência. Falha de entrega reaproveita resposta elegível.
 
 API/worker usam portas de versão, busca e storage, sem escrita cruzada de módulos. Adapter de LLM recebe apenas trechos autorizados e parâmetros resolvidos; retorna chunks, usage e erro tipado. Adapter de storage recebe identidade de operação, namespace autorizado, checksum e limite; nunca URL arbitrária. Jobs carregam IDs, carregam política atual no início e antes de efeitos externos e falham fechado em indisponibilidade. Atualização de revogação tem prioridade e índice publicado anterior só continua enquanto elegível. Contratos externos geram recibos e metering após uso efetivo, com reserva anterior para concorrência.
+
+## Contrato verificável antes da implementação
+
+Para cada fluxo do pacote, o primeiro PR define e valida o contrato antes de implementar a operação. Identificar operação por `operationId` em OpenAPI para REST, AsyncAPI para eventos/WS ou schema equivalente para SSE, jobs e CLI. Incluir schemas de entrada/saída/envelope, exemplos válidos de requisição, resposta e evento, exemplos de cada erro aplicável, permissão efetiva, estados e transições, versionamento, concorrência, escopo/janela de idempotência, retries e teste de compatibilidade. Indicar fronteira e consumidor. Validar schemas e exemplos, inclusive os de erro, com testes de contrato em CI.
+
+Para cada ação U, documentar gatilho, operação C concreta, parâmetros e identidade usada, atualização de tela a partir da resposta/evento e estados de carregamento, erro, retry e cancelamento. Identificar ações sem UI e seus consumidores. Exemplo do mapa: U5, enviar mensagem → C4, criar turno → 202 com ID → assinar stream autorizado → atualizar deltas e citações; reconexão envia Last-Event-ID e volta a conferir ACL. Sem permissão, a UI exibe mensagem segura e o servidor recusa mesmo a chamada direta.
+
+| Contexto de negação | Resultado observável no contrato e no teste |
+| --- | --- |
+| Anônimo em operação protegida | 401 ou rejeição do handshake; nenhum efeito nem informação do recurso. |
+| Cross-tenant | 404 para recurso invisível ou rejeição segura da mensagem; nenhum acesso a DB, objeto, cache ou fila do tenant alvo. |
+| Sessão, vínculo ou ACL revogada | 401 para sessão inválida; 403/404 conforme visibilidade nos demais casos. Cortar stream/replay e impedir entrega ou mutação pendente. |
+| Grupo com destinatário não verificável ou sem ACL | Orientar canal privado sem título, prévia, citação ou conteúdo. |
+| Provedor restrito pela classificação ou política | Recusar aquele despacho antes de qualquer transmissão. Alternativa local somente se autorizada; erro redigido quando indisponível. |
+| Retry/replay | Repetição autorizada e idêntica recupera recibo; payload incompatível dá 409. Revogação impede replay e negação permanente não é reenfileirada. Resultado externo incerto exige conciliação. |
+
+Cada contrato lista os contextos aplicáveis e justifica os demais. Cada caso negativo verifica também a ausência de efeito lateral e vazamento.

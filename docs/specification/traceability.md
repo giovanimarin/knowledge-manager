@@ -96,3 +96,16 @@ Fonte [decisões KM](../decisions/knowledge-manager-scope.md). Capacidades próp
 | KM-06 | V1 saúde/índice determinístico, lacunas/duplicidades/contradições, glossário, fila/relatórios, editor IA/captura e revisão humana; ontologia/competências posteriores | 16 · U9 · C9 · Finding/GlossaryRevision · 13 | Pesos somam 100%, evidência rastreável e sugestão segue publicação; idade isolada e chat privado não viram achado exposto. |
 | KM-07 | V1 ajuda oficial isolada, IA/diagnóstico determinístico, ticket/SLA/incident/status/CSAT e suporte excepcional; chat humano/helpdesk/CRM/agentes posteriores | 17 · U10 · C9 · SupportTicket/SupportGrant · 13S | Ticket percorre espera/reabertura com SLA, revogar grant encerra acesso; diagnóstico sem segredos ou execução arbitrária. |
 | KM-08 | V1 Docker/setup/doctor, ambientes, CI/CD, SemVer, migração/backup/rollback, documentação/SBOM/demo; self-hosted comercial/marketplaces/multicloud posteriores | 18 · U10 · C10 · Deployment/RestoreRun · 01/15 | Boot limpo Linux/macOS/WSL2 e update/restore; falha interrompe rollout sem perda de escritas ou teste desabilitado. |
+
+## Decomposição obrigatória por pacote
+
+As linhas acima são o índice de categorias. Antes de implementar, o PR de contrato do pacote publica um inventário revisável comparado com cada subcapacidade do registro normativo. Usar IDs estáveis sob a decisão, por exemplo `DM-04.presenca` e `DM-04.reconexao`. Cada registro contém:
+
+`capabilityId → RF → tela U e ação (ou consumidor sem UI) → operação C e operationId → entidade/política → fixture positiva e fixture negativa → evidência`
+
+| ID de exemplo | RF / UI | Operação / entidade / política | Fixtures previstas |
+| --- | --- | --- | --- |
+| DM-04.presenca | RF-03 / U3 abrir editor | C2, operação WS de presença / Draft / membro com leitura no espaço e ACL da página | Dois editores veem presença; outro tenant não vê participantes. |
+| DM-04.reconexao | RF-03 / U3 reconectar | C2, operação WS de ressincronização / CRDTUpdate / epoch atual | Reaplicar updates após queda; sessão revogada não recebe snapshot nem grava update. |
+
+Os nomes acima são exemplos de planejamento. Na entrega, preencher evidência por commit, ambiente e link da execução, com estado de validação local, sandbox ou produção. Registrar subcapacidades adiadas com disposição e fonte, sem marcá-las como testadas. Conferir itens órfãos, duplicados ou sem fixture e mapear subcapacidades compartilhadas entre pacotes ao responsável e aos consumidores. Usar T-{ID} como agrupador e IDs de fixture por subcapacidade. Aceite do pacote exige cobertura individual do escopo entregue, inclusive quando um teste cobre vários IDs identificados explicitamente.
