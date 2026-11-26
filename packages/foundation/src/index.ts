@@ -113,18 +113,17 @@ export async function traced<T>(name: string, action: () => Promise<T>) {
 
 export class Dependencies {
   readonly storage = new FileStorage(storagePath());
+  private readonly pool = new Pool({
+    host: required("PGHOST"),
+    database: required("PGDATABASE"),
+    user: required("PGUSER"),
+    password: required("PGPASSWORD"),
+    connectionTimeoutMillis: 1500,
+    query_timeout: 1500,
+    max: 4,
+  });
   readonly database = new Kysely<Database>({
-    dialect: new PostgresDialect({
-      pool: new Pool({
-        host: required("PGHOST"),
-        database: required("PGDATABASE"),
-        user: required("PGUSER"),
-        password: required("PGPASSWORD"),
-        connectionTimeoutMillis: 1500,
-        query_timeout: 1500,
-        max: 4,
-      }),
-    }),
+    dialect: new PostgresDialect({ pool: this.pool }),
   });
   private readonly redis = new Redis({
     ...redisOptions(),
@@ -134,6 +133,15 @@ export class Dependencies {
   });
 
   constructor() {
+    // Idle connections can fail without an active query during a database restart.
+    this.pool.on("error", () =>
+      console.error(
+        JSON.stringify({
+          service: "database",
+          event: "idle_connection_closed",
+        }),
+      ),
+    );
     this.redis.on("error", () => {});
   }
 

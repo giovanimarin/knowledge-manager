@@ -84,6 +84,8 @@ services:
     build:
       context: .
       target: web
+    init: true
+    read_only: true
     networks: [default, ingress]
     ports:
       - "127.0.0.1:${KM_WEB_PORT:-3000}:8080"
@@ -92,7 +94,13 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: [CMD, wget, -Y, "off", -qO, /dev/null, "http://127.0.0.1:8080/"]
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'fetch("http://127.0.0.1:8080/").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
+        ]
       interval: 3s
       timeout: 3s
       retries: 15

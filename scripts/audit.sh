@@ -3,7 +3,8 @@ set -euo pipefail
 mkdir -p artifacts/audit
 output="$(cd artifacts/audit && pwd)"
 scratch="$(mktemp -d)"
-trap 'rm -rf -- "$scratch"' EXIT
+cache="$(docker volume create)"
+trap 'docker volume rm "$cache" >/dev/null; rm -rf -- "$scratch"' EXIT
 scanner='aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c'
 export COMPOSE_PROJECT_NAME=km-audit
 export KM_APP_PASSWORD=unused-ci-placeholder
@@ -22,10 +23,11 @@ trivy() {
     ca_args=(--mount "type=bind,src=$KM_BUILD_CA,dst=/km-ca.pem,readonly" --env SSL_CERT_FILE=/km-ca.pem)
   fi
   docker run --rm "${ca_args[@]}" \
-    --mount "type=bind,src=$scratch,dst=/scan" \
+    --mount "type=volume,src=$cache,dst=/cache" \
+    --mount "type=bind,src=$scratch,dst=/scan,readonly" \
     --mount "type=bind,src=$output,dst=/results" \
     --mount "type=bind,src=$PWD,dst=/repo,readonly" \
-    "$scanner" --cache-dir /scan/cache "$@"
+    "$scanner" --cache-dir /cache "$@"
 }
 status=0
 pnpm audit --audit-level high > "$output/dependency-audit.txt" || status=1
@@ -35,7 +37,7 @@ compose build api web db
 compose pull redis
 trivy fs --scanners secret --skip-dirs node_modules,artifacts,test-results,playwright-report,backups --skip-files ".env*" \
   --format json --output /results/secrets.json --exit-code 1 /repo || status=1
-trivy fs --format cyclonedx --output /results/workspace.cdx.json /repo
+trivy fs --include-dev-deps --format cyclonedx --output /results/workspace.cdx.json /repo
 mapfile -t images < <(compose config --images | sort -u)
 for image in "${images[@]}"; do
   name="${image%%@*}"

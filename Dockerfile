@@ -1,4 +1,4 @@
-FROM node:24.22.3-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS build
+FROM node:24.22.3-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS build
 WORKDIR /src
 RUN --mount=type=secret,id=build_ca \
     if [ -f /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \
@@ -18,7 +18,7 @@ RUN --mount=type=secret,id=build_ca \
     if [ -f /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \
     pnpm build && pnpm --filter @km/api deploy --prod /out/api && pnpm --filter @km/worker deploy --prod /out/worker
 
-FROM node:24.22.3-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS runtime
+FROM node:24.22.3-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS runtime
 WORKDIR /app
 RUN install -d -o node -g node -m 0750 /var/lib/km /var/lib/km/objects
 COPY --chown=node:node --from=build /out/api /app/api
@@ -28,10 +28,37 @@ COPY --chmod=0644 scripts/probe.cjs /app/probe.cjs
 USER node
 CMD ["node", "api/dist/main.js"]
 
-FROM nginxinc/nginx-unprivileged:1.30-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS web
-COPY --chmod=0644 infra/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --chown=101:101 --from=build /src/apps/web/dist /usr/share/nginx/html
+FROM node:24.22.3-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS web
+WORKDIR /app
+COPY --chown=node:node --from=build /src/apps/web/dist /app/site
+COPY --chmod=0644 scripts/serve-web.mjs /app/serve-web.mjs
+USER node
+CMD ["node", "serve-web.mjs"]
 
-FROM pgvector/pgvector:0.8.2-pg17@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966 AS database
+FROM postgres:17.10-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193 AS postgres-base
+
+FROM node:24.22.3-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS vector-build
+RUN --mount=type=secret,id=build_ca,mode=0444 \
+    set -eu; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    if [ -f /run/secrets/build_ca ]; then \
+      printf 'Acquire::https::CaInfo "/run/secrets/build_ca";\n' > /etc/apt/apt.conf.d/99-build-ca; \
+    fi; \
+    apt-get -o APT::Update::Error-Mode=any update; apt-get install -y --no-install-recommends gcc make musl-tools libc6-dev; \
+    rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99-build-ca
+COPY --from=postgres-base /usr/local/bin/pg_config /usr/local/bin/pg_config
+COPY --from=postgres-base /usr/local/include/postgresql /usr/local/include/postgresql
+COPY --from=postgres-base /usr/local/lib/postgresql/pgxs /usr/local/lib/postgresql/pgxs
+ADD --checksum=sha256:69f4019389af05dc1c9548deb8628e62878e6e207c03907f2b8af2016472cdaa https://codeload.github.com/pgvector/pgvector/tar.gz/refs/tags/v0.8.2 /tmp/pgvector.tgz
+RUN mkdir /vector && tar -xzf /tmp/pgvector.tgz -C /vector --strip-components=1 \
+    && make -C /vector -j2 CC=musl-gcc OPTFLAGS="" with_llvm=no \
+    && make -C /vector install DESTDIR=/vector-out OPTFLAGS="" with_llvm=no \
+    && cp /vector/LICENSE /vector-out/usr/local/share/postgresql/extension/pgvector.LICENSE
+
+FROM postgres-base AS database
+RUN rm /usr/local/bin/gosu \
+    && install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/data
+COPY --from=vector-build /vector-out/usr/local/ /usr/local/
 COPY --chmod=0755 infra/00-roles.sh /docker-entrypoint-initdb.d/00-roles.sh
 COPY --chmod=0644 infra/*.sql /km-infra/
+USER postgres
