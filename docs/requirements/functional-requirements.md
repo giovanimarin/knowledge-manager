@@ -1,6 +1,6 @@
 # Requisitos funcionais e aceite
 
-Escopo de [produto](../PRODUCT.md), rastreado na [matriz](../references/reuse-matrix.md). Cenários abaixo são critérios futuros.
+Escopo de [produto](../PRODUCT.md), rastreado na [matriz](../references/reuse-matrix.md). RF-01 a RF-12 são macro-requisitos do PKG-00. Cada pacote responsável detalhará fluxos, regras, casos de erro e testes de aceite, preservando o vínculo com o ID RF. Os cenários abaixo orientam esse detalhamento.
 
 | ID / pacote | Requisito | Aceite |
 | --- | --- | --- |

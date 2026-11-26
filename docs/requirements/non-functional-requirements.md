@@ -1,6 +1,6 @@
 # Requisitos não funcionais
 
-Alvos iniciais propostos para revisão. PKG-01 define ambiente e protocolo de benchmark; PKG-05 a PKG-07 medem o caminho do MVP.
+Alvos iniciais propostos para revisão. PKG-01 define ambiente e protocolo de benchmark; PKG-05 a PKG-07 medem o caminho do MVP. Os valores de RNF-02 e RNF-06 são hipóteses quantitativas ainda sem evidência de benchmark ou avaliação RAG. A decisão sobre SLOs fica para depois da medição e revisão dos resultados.
 
 | ID | Alvo e evidência esperada |
 | --- | --- |

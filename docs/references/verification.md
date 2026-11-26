@@ -20,6 +20,18 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /tmp/km-audit/test-venv/bin/python -m pytest \
 
 A issue pede testes seguros onde viáveis. As suítes completas de terceiros ficaram fora desta rodada. A verificação de integração foi documental: Meta Cloud API e Teams SDK são caminhos oficiais, Google e Entra documentam OIDC e AWS oferece SAML para app próprio. Nenhum login corporativo, webhook ou envio ao vivo foi executado. A prova depende de credenciais de sandbox, configuração do provedor e aprovação de custos se aplicável. [Canais](unified-channel-analysis.md) · [SSO](../requirements/functional-requirements.md#viabilidade-de-sso).
 
+## Gates de integração
+
+| Pacote | Evidência exigida antes do aceite da integração |
+| --- | --- |
+| PKG-08 | Login em sandboxes Google Workspace e Entra ID, com mapeamento e revogação. Para AWS IAM Identity Center, prova SAML com metadata, atribuições e rotação de certificado antes de declarar suporte. |
+| PKG-10 | Instalação Meta de teste, webhook autenticado, envio e confirmação de status pela WhatsApp Cloud API. |
+| PKG-11 | Instalação em tenant Teams de teste, atividade autenticada, resposta e entrega proativa com o SDK selecionado. |
+
+Esses gates são dos pacotes de integração. O PKG-00 registra viabilidade documental e pré-requisitos.
+
+## Rastreabilidade dos entregáveis
+
 | Entregável | Evidência |
 | --- | --- |
 | Auditoria e classificação | [Matriz](reuse-matrix.md) e quatro análises |
@@ -29,6 +41,8 @@ A issue pede testes seguros onde viáveis. As suítes completas de terceiros fic
 | Sequência e fundação | [Roadmap](../ROADMAP.md) · [PKG-01](../packages/PKG-01.md) |
 
 ## Validação do PR
+
+Este PR documental ainda não tem CI próprio do KnowledgeManager. Os 39 testes passaram no checkout do Unified Channel e cobrem o comportamento local daquela referência. As integrações do KnowledgeManager seguem pendentes dos gates acima.
 
 - `git diff --cached --check` verificou espaços em branco do diff.
 - Um script Python percorreu os links Markdown locais e os links de código fixados. Verificou caminhos, objetos Git com `git cat-file -e` e limites dos intervalos de linhas nos clones.
