@@ -1,0 +1,31 @@
+# PKG-01 — Fundação do repositório, CI e ambiente local
+
+Pré-requisito: aceite da especificação PKG-00B ou autorização explícita. Estimativa inicial: 56–88 horas de engenharia; inclui documentação e revisão. A fundação entrega esqueleto, infraestrutura e checks que o PKG-02 consumirá.
+
+| Incremento | Entrega | Horas |
+| --- | --- | --- |
+| 1 | Workspace pnpm com versões travadas, estrutura web/API/worker e portas de módulos. TypeScript estrito, convenções, lint e regra de imports. | 12–20 |
+| 2 | Compose local com PostgreSQL/pgvector, Redis e storage local; imagens pinadas; configuração de exemplo sem credenciais reais, health/readiness e migração reversível em banco descartável. | 16–24 |
+| 3 | Workflows com permissões mínimas, lockfiles, lint/typecheck/unit/integration/arquitetura, smoke E2E e scanners de dependências/segredos/licenças, SBOM e artefatos. | 16–24 |
+| 4 | Runbook de setup, teardown, migração e backup/restore local, OTel básico e protocolo de benchmark. Verificar com checkout limpo. | 12–20 |
+
+## Riscos e estratégia de validação
+
+| Risco | Validação prevista no PKG-01 |
+| --- | --- |
+| Backup incompleto, inconsistente com o storage ou ilegível | Popular banco e armazenamento local com dados e objetos sintéticos e capturar um conjunto consistente com gravações pausadas. Restaurar em volumes descartáveis usando o runbook. Comparar schema, registros, vínculos e checksums, e confirmar que o smoke volta a passar. Registrar tempos e último dado recuperável como linha de base do RNF-03. Exercitar falha com backup incompleto e confirmar que o ambiente permanece indisponível até recuperação válida. |
+| Restore reintroduzir conteúdo excluído ou permissões revogadas | Registrar no runbook o requisito de reaplicar tombstones e conferir ACL antes de reabrir acesso. O PKG-01 exercitará o bloqueio da reabertura no ambiente descartável. A validação de tombstones e ACL com dados reais do domínio fica condicionada à disponibilidade desses fluxos nos pacotes responsáveis. |
+| Compose ou smoke depender de credenciais, quotas ou serviços pagos | Executar o smoke com PostgreSQL/pgvector, Redis, storage e provedores simulados locais, a partir de checkout limpo e sem credenciais externas. Após baixar imagens e dependências, bloquear egress externo durante o smoke e registrar o resultado. Documentar os pré-requisitos de bootstrap e quais etapas reais precisarão de sandbox e aprovação de custos nos pacotes correspondentes. |
+
+## Aceite
+
+- Publicar o contrato verificável do smoke, instalação, readiness e restore antes da implementação, com fixtures de sucesso e falha, conforme [C10 e regra geral](../specification/contracts.md#contrato-verificável-antes-da-implementação).
+- Configurar workflows e checks obrigatórios de branch em main. No PR, vincular execuções reais de smoke limpo, testes e auditoria/SBOM ao head, com logs e artefatos. Verificar bloqueio de merge por check ausente ou vermelho conforme [qualidade](../specification/quality.md#evidência-exigida-desde-o-pkg-01).
+- Usar fixtures sintéticas e serviços locais. Sandbox, credenciais de provedores e pagamentos ficam para os gates de integração e rollout. O PKG-02 comprovará isolamento RLS de dois tenants no mesmo DB e implantação dedicated inicial conforme [roadmap](../ROADMAP.md#pré-requisito-de-cada-pacote-e-marcos-híbridos).
+
+- Checkout limpo sobe em Compose por roteiro versionado e confirma readiness API/worker, pgvector, Redis e storage. Parar banco torna readiness indisponível e recuperável.
+- CI executa smoke com fixtures locais e verifica schema/migração, papéis distintos para aplicação/migração e teste de isolamento com dados fictícios. Violação de fronteira e lockfile divergente falham no CI.
+- SBOM de dependências/imagens é revisável. Registrar versões, licenças e exceções aprovadas antes de incorporar dependências. Segredos de exemplo são inertes.
+- Documentar decisões adotadas, testes/resultados, configuração e pendências em PR. Tenant, ACL, editor, embeddings, login e canais entram nos pacotes subsequentes.
+
+[ADRs](../architecture/technology-selection.md) · [Requisitos de qualidade](../requirements/non-functional-requirements.md) · [Roadmap](../ROADMAP.md).
