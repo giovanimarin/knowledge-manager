@@ -1,17 +1,12 @@
 # Product specification
 Independent unified corporate knowledge platform, one UI, own domain and authorization. Reference projects: https://github.com/docmost/docmost (content), https://github.com/Mintplex-Labs/anything-llm (RAG), https://github.com/keycloak/keycloak (identity), https://github.com/gambletan/unified-channel (channels). No reference application as runtime dependency.
-## Scope
-- Organization, users, groups, roles, document/space ACLs, tenant isolation from foundation.
-- Content: spaces, hierarchical pages, rich editor, collaboration, versions/restore, attachments, comments, tags, import/export, search, publication, governance (owner, confidentiality, review).
-- Knowledge: structured extraction, stable block IDs, incremental hash-based chunking/embeddings, hybrid retrieval, reranking, context budget, provider adapters (Ollama and remote), streaming, citations by document/version/section, no-evidence response, feedback, reindex, gaps/contradictions.
-- Conversations: web chat, history, authorized context, cancellation, usage.
-- Identity: local auth, Google Workspace and Entra OIDC, AWS IAM Identity Center SAML subject to validation, external identity mapping, JIT provisioning, group mapping, session revocation, later SCIM/LDAP where justified.
-- Channels: normalized messages, verified webhooks, persistent inbox/outbox, dedup, retry/DLQ, identity linking, routing, delivery tracking; official WhatsApp and Teams first, Slack/Telegram later.
-- Admin: organization, users, permissions, model/channel/KB configuration, secrets, indexing health, audit, retention, limits, analytics and usage.
-## Proposed architecture (pending audit)
-React/TypeScript, NestJS, Tiptap/ProseMirror, Yjs/Hocuspocus, PostgreSQL/pgvector/FTS, Kysely, Redis/BullMQ, local/S3 object storage, Ollama; Python workers only if justified. Modular monolith with separately runnable workers, transactional outbox, versioned contracts, Docker Compose, OTel. Modules own their data; no direct cross-module mutations.
-Publication -> outbox -> extraction -> changed blocks -> chunk/embed -> atomic index activation. Query -> authenticated server-derived scope -> authorized hybrid retrieval -> rerank -> context -> model -> verified citations. Revocation and deletion block new retrieval immediately. Channel -> verify -> tenant resolution -> dedup/persist -> identity -> authorize -> conversation -> knowledge -> delivery.
-## Acceptance
-Cross-tenant negative tests, ACL revocation including historical context, concurrent editing convergence, idempotent indexing and webhooks, no stale deleted sources, verifiable citations, invalid token/webhook rejection, delivery recovery. CI lint/typecheck/unit/integration/architecture/security/E2E and RAG evaluation. LGPD, accessibility, pt-BR/en, backups, audit and observability. No paid API required for tests; mock providers.
-## Evidence status
-PKG-00 records the four pinned reference revisions, observed behavior, test results, and integration gaps. The technology decisions and acceptance criteria are proposed for review. [Audit evidence](references/verification.md) · [Technology decisions](architecture/technology-selection.md).
+
+## Escopo da primeira versão
+
+O workshop aprovou 59 categorias em 60 decisões. A V1 inclui wiki colaborativa e governada, IA configurável e fundamentada, conversa cotidiana por Teams, WhatsApp oficial e Slack, chat web, identidade federada, administração, billing, onboarding/trial, governança, suporte e distribuição. Opera em SaaS compartilhado e instalação dedicada por empresa com o mesmo código e control/data plane separados. Demo isolada e trial de 14 dias, 10 colaboradores, 1 GB e R$20 de crédito comercial sem cartão, configurável. AL-09 (agentes e execução externa) e demais subfuncionalidades futuras constam nos limites.
+
+## Especificação e aceite
+
+Os cinco registros de decisões governam o escopo. A especificação detalha paridade, requisitos, UX, segurança, dados, contratos, validação e plano de PRs. PKG-00 conserva evidências da auditoria; os seus fluxos iniciais são baseline. Implementação aguarda revisão PKG-00B. Testes locais e sandboxes autorizados têm evidências distintas, sem contratação automática.
+
+[PKG-00B](packages/PKG-00B.md) · [Matriz](specification/traceability.md) · [Limites](specification/scope-boundaries.md) · [Roadmap](ROADMAP.md).

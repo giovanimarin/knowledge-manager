@@ -14,3 +14,5 @@ Alvos iniciais propostos para revisão. PKG-01 define ambiente e protocolo de be
 | RNF-08 | CI executa lint, typecheck, unit, integração, regras de arquitetura, análise de dependências/segredos e E2E do escopo entregue. Provedores fake offline, SBOM e workflow com permissões mínimas. |
 
 [Roadmap e dependências](../ROADMAP.md) · [Segurança](../architecture/security-model.md).
+
+A [política de gates PKG-00B](../specification/quality.md) estende a cobertura a dois tenants compartilhados e um dedicado, sandboxes externos, billing, migração e rollout. Nenhum valor de benchmark, SLO ou critério de acessibilidade foi demonstrado por esta especificação.

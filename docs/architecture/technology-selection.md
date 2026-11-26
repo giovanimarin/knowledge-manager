@@ -1,5 +1,7 @@
 # ADRs do PKG-00
 
+Baseline da auditoria PKG-00. Aplicar o [detalhamento do PKG-00B](../specification/integrations.md) para a V1 aprovada.
+
 As decisões são propostas para revisão neste PR. PKG-01 fixa versões suportadas e valida a pilha com smoke tests, SBOM e locks.
 
 | ADR | Alternativas | Decisão e condição de revisão |

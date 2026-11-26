@@ -1,5 +1,7 @@
 # Desenho do sistema
 
+Baseline da auditoria PKG-00. Aplicar o [detalhamento do PKG-00B](../specification/tenancy.md) para a V1 aprovada.
+
 Proposta de monólito modular. Web, API, colaboração e worker são processos escaláveis da mesma versão, com PostgreSQL como fonte de verdade, Redis para jobs/fanout e armazenamento privado de objetos. Configuração externa, OTel e Compose local. Aplicações de referência ficam fora do runtime.
 
 | Módulo | Responsabilidade | Portas consumidas |

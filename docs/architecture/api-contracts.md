@@ -1,5 +1,7 @@
 # Contratos propostos
 
+Baseline da auditoria PKG-00. Aplicar o [detalhamento do PKG-00B](../specification/contracts.md) para a V1 aprovada.
+
 REST JSON sob `/v1`, OpenAPI e clientes gerados. IDs opacos e RFC 9457 para erros, com correlation ID. Validação rejeita campos de autoridade no corpo. Recursos invisíveis retornam 404, sessão inválida 401 e ação proibida em recurso visível 403. Cursor opaco vinculado ao filtro/tenant. Comandos retryable aceitam Idempotency-Key com escopo de tenant, sujeito e rota; payload diferente na mesma chave retorna 409.
 
 | Operação | Contrato e condições |

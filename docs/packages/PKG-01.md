@@ -1,13 +1,13 @@
 # PKG-01 — Fundação do repositório, CI e ambiente local
 
-Pré-requisito: revisão do PKG-00 e ADRs. Estimativa inicial: 40–56 horas de engenharia; inclui documentação e revisão. A fundação entrega esqueleto, infraestrutura e checks que o PKG-02 consumirá.
+Pré-requisito: aceite da especificação PKG-00B ou autorização explícita. Estimativa inicial: 56–88 horas de engenharia; inclui documentação e revisão. A fundação entrega esqueleto, infraestrutura e checks que o PKG-02 consumirá.
 
 | Incremento | Entrega | Horas |
 | --- | --- | --- |
-| 1 | Workspace pnpm com versões travadas, estrutura web/API/worker e portas de módulos. TypeScript estrito, convenções, lint e regra de imports. | 8–12 |
-| 2 | Compose local com PostgreSQL/pgvector, Redis e storage local; imagens pinadas; configuração de exemplo sem credenciais reais, health/readiness e migração reversível em banco descartável. | 12–16 |
-| 3 | Workflows com permissões mínimas, lockfiles, lint/typecheck/unit/integration/arquitetura, smoke E2E e scanners de dependências/segredos/licenças, SBOM e artefatos. | 12–16 |
-| 4 | Runbook de setup, teardown, migração e backup/restore local, OTel básico e protocolo de benchmark. Verificar com checkout limpo. | 8–12 |
+| 1 | Workspace pnpm com versões travadas, estrutura web/API/worker e portas de módulos. TypeScript estrito, convenções, lint e regra de imports. | 12–20 |
+| 2 | Compose local com PostgreSQL/pgvector, Redis e storage local; imagens pinadas; configuração de exemplo sem credenciais reais, health/readiness e migração reversível em banco descartável. | 16–24 |
+| 3 | Workflows com permissões mínimas, lockfiles, lint/typecheck/unit/integration/arquitetura, smoke E2E e scanners de dependências/segredos/licenças, SBOM e artefatos. | 16–24 |
+| 4 | Runbook de setup, teardown, migração e backup/restore local, OTel básico e protocolo de benchmark. Verificar com checkout limpo. | 12–20 |
 
 ## Riscos e estratégia de validação
 

@@ -1,5 +1,7 @@
 # Modelo de domínio
 
+Baseline da auditoria PKG-00. Aplicar o [detalhamento do PKG-00B](../specification/data.md) para a V1 aprovada.
+
 | Agregado | Fatos e invariantes propostas |
 | --- | --- |
 | Organização | Membership liga pessoa à organização com estado e funções; grupos contêm memberships desse tenant. A política começa por tenant e estado, exige direito explícito, e restrição de página pode reduzir o acesso do espaço. Admin de operação não ganha leitura automática de documentos. |

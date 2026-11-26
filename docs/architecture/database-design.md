@@ -1,5 +1,7 @@
 # Projeto PostgreSQL
 
+Baseline da auditoria PKG-00. Aplicar o [detalhamento do PKG-00B](../specification/data.md) para a V1 aprovada.
+
 Todas as relações de negócio usam `org_id NOT NULL` e chaves/FKs compostas com tenant. Sessão de aplicação sem BYPASSRLS e sem propriedade das tabelas; políticas RLS com escopo transacional (`SET LOCAL` equivalente parametrizado), FORCE RLS e papel de migração separado. Reservar usuário de serviço com escopo por tenant para workers e testes com pooling e contexto ausente.
 
 | Tabelas conceituais | Chaves, índices e transações |

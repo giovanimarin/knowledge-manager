@@ -1,6 +1,6 @@
 # Requisitos funcionais e aceite
 
-Escopo de [produto](../PRODUCT.md), rastreado na [matriz](../references/reuse-matrix.md). RF-01 a RF-12 são macro-requisitos do PKG-00. Cada pacote responsável detalhará fluxos, regras, casos de erro e testes de aceite, preservando o vínculo com o ID RF. Os cenários abaixo orientam esse detalhamento.
+Escopo de [produto](../PRODUCT.md), rastreado na [matriz](../references/reuse-matrix.md). RF-01 a RF-12 são macro-requisitos do PKG-00, detalhados e ampliados pela [matriz PKG-00B](../specification/traceability.md). Cada pacote responsável detalhará fluxos, regras, casos de erro e testes de aceite, preservando o vínculo com o ID RF. Os cenários abaixo orientam esse detalhamento.
 
 | ID / pacote | Requisito | Aceite |
 | --- | --- | --- |
@@ -12,10 +12,16 @@ Escopo de [produto](../PRODUCT.md), rastreado na [matriz](../references/reuse-ma
 | RF-06 / 05 | Extração estruturada, IDs estáveis, hash incremental, embeddings e reindexação. | Mudar um bloco não reembebe bloco estável compatível; simular jobs duplicados e fora de ordem, sem promover versão excluída ou antiga. |
 | RF-07 / 06 | Busca híbrida, rerank, orçamento, Ollama/remote atrás de portas, citação verificável, recusa e detecção de lacunas/contradições. | Fixture com fontes conflitantes obriga citar versões válidas de ambas ou se abster; modelo simulado nunca inclui fonte de outro tenant; medir qualidade conforme RNF-06. |
 | RF-08 / 07 | Chat web, streaming, cancelamento, histórico, feedback e medição de uso. | Cancelar interrompe geração; reconexão revalida; revogar fonte remove contexto derivado de turns e resumos; registrar feedback e uso uma vez. |
-| RF-09 / 08 | Google Workspace e Entra OIDC; AWS IAM Identity Center SAML condicionado; JIT, mapeamento de grupo e revogação; SCIM/LDAP em fase futura. | Testar issuer, nonce, assinatura e tenant inválidos, ausência de associação automática por e-mail, replay e atualização de grupos em mock; prova corporativa separada. |
+| RF-09 / 08 | Google Workspace, Entra, Cognito e OIDC genérico; AWS IAM Identity Center e SAML genérico com gates reais; JIT, mapeamento de grupo e revogação; SCIM/LDAP posteriores. | Testar issuer, nonce, assinatura e tenant inválidos, ausência de associação automática por e-mail, replay e atualização de grupos em mock; prova corporativa separada. |
 | RF-10 / 09 | Normalização, autenticação de webhook, inbox/outbox, dedup, links, roteamento, retries, DLQ e status. | Eventos repetidos geram um turno; falha após commit recupera trabalho; eventos desconhecidos ou vínculos revogados ficam sem acesso. |
-| RF-11 / 10–11 | Adaptadores oficiais Meta e Teams; Slack/Telegram posteriores. | Sandbox valida instalação, recebimento, resposta e status/erro do provedor conforme capability; fixture local cobre queda, replay e limites. |
+| RF-11 / 10–11 | Adaptadores oficiais Meta, Teams e Slack em V1; Google Chat, Telegram, Discord e e-mail posteriores. | Sandbox valida instalação, recebimento, resposta e status/erro do provedor conforme capability; fixture local cobre queda, replay e limites. |
 | RF-12 / 12–13 | Administração de tenants, permissões, KB, modelos/canais, segredos, retenção, limites, auditoria, uso/analytics. | Administrador habilitado gira segredo sem ecoar valor, altera limites, vê saúde do índice e exporta auditoria e métricas do próprio tenant. |
+| RF-13 / 02–06 | API de integração, identidade de serviço e delegação | Contratos e isolamento em T-AL-13/T-KC-07. |
+| RF-14 / 12B | Medição, catálogo, orçamento, billing e pagamento/fiscal | Idempotência e visões em T-AL-12/T-KM-03. |
+| RF-15 / 02–14 | Controle híbrido, trial, onboarding, portabilidade e privacidade | Isolamento e prova por modo em T-KC-09/T-KM-02/T-KM-04. |
+| RF-16 / 13 | Governança, editor assistido, glossário e fila de melhoria | Evidência e revisão humana em T-AL-11/T-KM-06. |
+| RF-17 / 13S | Suporte oficial separado, diagnóstico e chamados | Escopo e revogação em T-KM-07. |
+| RF-18 / 01–15 | UX/marca, distribuição, atualização e gates | Regressão UI e recuperação em T-KM-05/T-KM-08. |
 
 ## Viabilidade de SSO
 
