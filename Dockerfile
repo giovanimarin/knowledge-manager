@@ -20,7 +20,7 @@ RUN --mount=type=secret,id=build_ca \
 
 FROM node:24.22.3-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS runtime
 WORKDIR /app
-RUN install -d -o node -g node -m 0750 /var/lib/km/objects
+RUN install -d -o node -g node -m 0750 /var/lib/km /var/lib/km/objects
 COPY --from=build /out/api /app/api
 COPY --from=build /out/worker /app/worker
 COPY --chmod=0644 scripts/storage.mjs /app/storage.mjs

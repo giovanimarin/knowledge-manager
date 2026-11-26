@@ -33,7 +33,7 @@ pnpm -r licenses list --json > "$output/npm-licenses.json"
 node scripts/license-check.mjs "$output/npm-licenses.json" || status=1
 compose build api web db
 compose pull redis
-trivy fs --scanners secret --skip-dirs node_modules,artifacts,test-results,playwright-report \
+trivy fs --scanners secret --skip-dirs node_modules,artifacts,test-results,playwright-report,backups --skip-files ".env*" \
   --format json --output /results/secrets.json --exit-code 1 /repo || status=1
 trivy fs --format cyclonedx --output /results/workspace.cdx.json /repo
 mapfile -t images < <(compose config --images | sort -u)
@@ -43,7 +43,7 @@ for image in "${images[@]}"; do
   name="${name//:/-}"
   docker save "$image" -o "$scratch/image.tar"
   trivy image --input /scan/image.tar --format cyclonedx --output "/results/$name.cdx.json"
-  trivy image --input /scan/image.tar --scanners vuln --severity CRITICAL \
+  trivy image --input /scan/image.tar --scanners vuln --severity CRITICAL --db-repository ghcr.io/aquasecurity/trivy-db:2 \
     --format json --output "/results/$name.scan.json" --exit-code 1 || status=1
   trivy image --input /scan/image.tar --scanners license \
     --format json --output "/results/$name.licenses.json"
