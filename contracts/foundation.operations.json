@@ -1,17 +1,17 @@
 {
   "version": 1,
   "operations": {
-    "setup": { "command": "make setup", "success": 0, "failure": 1 },
-    "smoke": { "command": "make smoke", "success": 0, "failure": 1 },
+    "setup": { "command": "make setup", "success": 0, "failure": 2 },
+    "smoke": { "command": "make smoke", "success": 0, "failure": 2 },
     "backup": {
       "command": "make backup DIR=<new-directory>",
       "success": 0,
-      "failure": 1
+      "failure": 2
     },
     "restore": {
       "command": "make restore DIR=<backup-directory>",
       "success": 0,
-      "failure": 1
+      "failure": 2
     }
   },
   "probeJob": {

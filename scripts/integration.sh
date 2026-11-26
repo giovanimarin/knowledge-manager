@@ -36,7 +36,8 @@ http_status() {
 use_project source
 make setup
 [[ "$(docker network inspect "${COMPOSE_PROJECT_NAME}_default" --format '{{.Internal}}')" == true ]]
-echo "Rede Compose interna confirmada"
+[[ "$(docker network inspect "${COMPOSE_PROJECT_NAME}_ingress" --format '{{index .Options "com.docker.network.bridge.enable_ip_masquerade"}}')" == false ]]
+echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
 pnpm test:e2e
 node scripts/benchmark.mjs

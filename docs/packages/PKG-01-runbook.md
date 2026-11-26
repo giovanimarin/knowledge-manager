@@ -2,7 +2,7 @@
 
 ## Instalar e iniciar
 
-Pré-requisitos: Docker Engine com Compose v2 (ou Docker Desktop), Node 24 e Make, terminal Bash e curl. No Windows, usar WSL2 com integração Docker Desktop. Imagens e pacotes são baixados na primeira instalação. O runtime usa rede Compose interna; só a web é publicada em loopback. O aplicativo inicia sem contas externas e sem API paga.
+Pré-requisitos: Docker Engine com Compose v2 (ou Docker Desktop), Node 24 e Make, terminal Bash e curl. No Windows, usar WSL2 com integração Docker Desktop. Imagens e pacotes são baixados na primeira instalação. API, workers e dados usam rede Compose interna. Só a web é publicada em loopback por uma bridge IPv4 com NAT de saída desabilitado. O aplicativo inicia sem contas externas e sem API paga.
 
 ```bash
 make doctor
