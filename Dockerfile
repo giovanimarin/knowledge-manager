@@ -57,8 +57,9 @@ RUN mkdir /vector && tar -xzf /tmp/pgvector.tgz -C /vector --strip-components=1 
 
 FROM postgres-base AS database
 RUN rm /usr/local/bin/gosu \
-    && install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/data
+    && install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/data \
+    && install -d -o postgres -g postgres -m 0755 /km-infra
 COPY --from=vector-build /vector-out/usr/local/ /usr/local/
 COPY --chmod=0755 infra/00-roles.sh /docker-entrypoint-initdb.d/00-roles.sh
-COPY --chmod=0644 infra/*.sql /km-infra/
+COPY --chown=postgres:postgres --chmod=0644 infra/*.sql /km-infra/
 USER postgres
