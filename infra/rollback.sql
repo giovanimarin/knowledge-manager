@@ -1,0 +1,6 @@
+\set ON_ERROR_STOP on
+BEGIN;
+SELECT pg_advisory_xact_lock(71189001);
+DROP SCHEMA km CASCADE;
+DROP EXTENSION vector;
+COMMIT;

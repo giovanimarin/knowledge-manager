@@ -1,0 +1,30 @@
+{
+  "name": "knowledge-manager",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.22.3 <25"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write apps packages scripts tests contracts *.json *.mjs *.ts *.yaml infra/*.yaml .github/workflows",
+    "format:check": "prettier --check apps packages scripts tests contracts *.json *.mjs *.ts *.yaml infra/*.yaml .github/workflows",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "playwright test",
+    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.15.0",
+    "typescript-eslint": "8.74.0",
+    "typescript": "5.9.3",
+    "prettier": "3.10.1",
+    "@types/node": "24.10.9",
+    "@playwright/test": "1.65.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+umask 077
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-knowledge-manager}"
+env_file="${KM_ENV_FILE:-.env}"
+
+compose() {
+  if [[ -n "${KM_BUILD_CA:-}" ]]; then
+    docker compose -f compose.yaml -f infra/compose.proxy.yaml --env-file "$env_file" "$@"
+  else
+    docker compose --env-file "$env_file" "$@"
+  fi
+}
+db() { compose exec -T db psql -X -v ON_ERROR_STOP=1 -U km_bootstrap -d km "$@"; }
+storage() { compose run --rm --no-deps -T api node /app/storage.mjs "$@"; }
+
+prerequisites() {
+  command -v node >/dev/null
+  command -v curl >/dev/null
+  node -e 'if (process.versions.node.split(".")[0] !== "24") process.exit(1)'
+  docker info --format '{{.ServerVersion}}'
+  docker compose version
+}
+
+initialize_env() {
+  if [[ ! -e "$env_file" ]]; then
+    node - "$env_file" <<'JS'
+const { randomBytes } = require("node:crypto");
+const { writeFileSync } = require("node:fs");
+const password = () => randomBytes(32).toString("hex");
+writeFileSync(process.argv[2], `KM_APP_PASSWORD=${password()}\nKM_DB_PASSWORD=${password()}\n`, { flag: "wx", mode: 0o600 });
+JS
+  fi
+}
+
+migrate() {
+  local checksum
+  checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
+  db -v "checksum=$checksum" -f /km-infra/migrate.sql
+}
+
+verify_fixture() {
+  [[ "$(db -Atc "SELECT relrowsecurity AND relforcerowsecurity
+    AND NOT pg_has_role('km_app', 'km_migrate', 'MEMBER')
+    AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'km_app')
+    AND EXISTS (SELECT FROM pg_policies WHERE schemaname='km' AND tablename='fixture_objects' AND policyname='fixture_isolation')
+    FROM pg_class WHERE oid='km.fixture_objects'::regclass")" == t ]]
+  db -Atc 'SELECT id, checksum FROM km.fixture_objects ORDER BY tenant_id, id' | storage check
+}
+
+setup() {
+  prerequisites
+  initialize_env
+  compose build api web db
+  compose up -d --wait --no-build db redis
+  migrate
+  # Open only after SQL and object checks. A failed restore is never repaired by setup.
+  storage verify-start
+  compose up -d --wait --no-build api worker web
+}
+
+snapshot_dir() {
+  [[ -n "${1:-}" ]] || { echo 'Informe DIR=<diretório>' >&2; return 1; }
+  node -e 'console.log(require("node:path").resolve(process.argv[1]))' "$1"
+}
+
+backup() (
+  local dir scratch started
+  dir="$(snapshot_dir "${1:-}")"
+  [[ ! -e "$dir" && ! -L "$dir" ]] || { echo 'O destino do backup deve ser novo' >&2; return 1; }
+  local api_id
+  api_id="$(compose ps -q api)"
+  [[ -n "$api_id" ]] || { echo 'Inicie o ambiente antes do backup' >&2; return 1; }
+  compose exec -T api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r => { if (!r.ok) process.exit(1) })'
+  scratch="$(mktemp -d "${dir}.partial.XXXXXX")"
+  started="$(date +%s)"
+  trap 'rm -rf -- "$scratch"; compose up -d --no-build api worker web >/dev/null' EXIT
+  compose stop web worker api
+  verify_fixture
+  compose exec -T db pg_dump -Fc -U km_bootstrap -d km > "$scratch/database.dump"
+  storage snapshot > "$scratch/storage.json"
+  node scripts/manifest.mjs create "$scratch"
+  node scripts/manifest.mjs verify "$scratch"
+  mv "$scratch" "$dir"
+  trap - EXIT
+  compose up -d --wait --no-build api worker web
+  echo "Backup concluído em $(( $(date +%s) - started )) s"
+)
+
+restore() {
+  local dir started
+  dir="$(snapshot_dir "${1:-}")"
+  started="$(date +%s)"
+  prerequisites
+  [[ "$COMPOSE_PROJECT_NAME" != knowledge-manager ]] || { echo 'Use um projeto Compose descartável e distinto' >&2; return 1; }
+  initialize_env
+  # Refuse an existing installation before modifying any state.
+  local existing
+  existing="$(compose ps --all -q)"
+  if [[ -n "$existing" ]]; then
+    echo 'A restauração requer um projeto descartável sem containers existentes' >&2
+    return 1
+  fi
+  compose build api web db
+  compose up -d --wait --no-build db redis
+  [[ "$(db -Atc "SELECT to_regnamespace('km') IS NULL")" == t ]] || {
+    echo 'O banco de destino precisa estar vazio' >&2; return 1;
+  }
+  storage maintenance
+  node scripts/manifest.mjs verify "$dir"
+  storage restore < "$dir/storage.json"
+  compose exec -T db pg_restore --exit-on-error --single-transaction -U km_bootstrap -d km < "$dir/database.dump"
+  migrate
+  verify_fixture
+  storage complete-restore
+  compose up -d --wait --no-build api worker web
+  echo "Restauração concluída em $(( $(date +%s) - started )) s"
+}
+
+command="${1:-}"
+shift || true
+case "$command" in
+  setup|start|stop|smoke|backup|restore)
+    [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Projeto Compose inválido' >&2; exit 1; }
+    lock="${TMPDIR:-/tmp}/km-compose-$COMPOSE_PROJECT_NAME.lock"
+    mkdir "$lock" || { echo 'Outra operação está ativa para este projeto' >&2; exit 1; }
+    trap 'rmdir "$lock"' EXIT
+    ;;
+esac
+case "$command" in
+  setup) setup ;;
+  start) compose up -d --wait --no-build ;;
+  stop) compose stop ;;
+  status) compose ps --all ;;
+  logs) compose logs --no-color "$@" ;;
+  doctor) prerequisites ;;
+  smoke) bash scripts/smoke.sh ;;
+  backup) backup "$@" ;;
+  restore) restore "$@" ;;
+  *) echo 'Operação desconhecida' >&2; exit 1 ;;
+esac
