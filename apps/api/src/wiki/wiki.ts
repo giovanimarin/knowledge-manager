@@ -1,3 +1,4 @@
+import { putObject, readObject, removeObject } from "./objects.js";
 import { attachmentInput, scanAttachment } from "./attachments.js";
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type TenantTransaction } from "@km/foundation";
@@ -6,6 +7,21 @@ import { id, input, string, IdentityError } from "../identity/security.js";
 import { audit, changeEpoch, type Actor } from "../identity/sessions.js";
 
 type Body = Record<string, unknown>;
+type Block = { id: string; text: string };
+function parseBlocks(value: unknown): Block[] {
+  if (!Array.isArray(value) || value.length > 300) throw invalid();
+  const blocks = value.map((item: unknown) => {
+    const entry = input(item);
+    return { id: id(entry.id), text: document(entry.text) };
+  });
+  if (
+    new Set(blocks.map((block) => block.id)).size !== blocks.length ||
+    blocks.map((block) => block.text).join("\n").length > 50000
+  )
+    throw invalid();
+  return blocks;
+}
+
 type Page = {
   id: string;
   space_id: string;
@@ -13,6 +29,7 @@ type Page = {
   parent_id: string | null;
   title: string;
   content: string;
+  blocks: Block[];
   tags: string[];
   category: string | null;
   metadata: Body;
@@ -42,6 +59,20 @@ function tags(value: unknown) {
 }
 
 export class Wiki {
+  private readonly removals = new Set<string>();
+  private readonly writes = new Set<string>();
+
+  async finishObjects(committed: boolean) {
+    const keys = committed ? this.removals : this.writes;
+    for (const key of keys) {
+      try {
+        await removeObject(this.tenant, key);
+      } catch {
+        console.error(JSON.stringify({ event: "wiki.object_cleanup_failed" }));
+      }
+    }
+  }
+
   constructor(
     private readonly tx: TenantTransaction,
     private readonly tenant: string,
@@ -206,11 +237,14 @@ export class Wiki {
       content = body.content === undefined ? template.content : content;
       metadata = { ...template.fields, ...metadata };
     }
+    const blocks = body.blocks === undefined ? [] : parseBlocks(body.blocks);
+    if (body.blocks !== undefined)
+      content = blocks.map((block) => block.text).join("\n");
     await this.validateMetadata(space, metadata);
     const position = await this.insertionPosition(space, parent, body.position);
     await this.resource(key, parent ?? space, level);
-    await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,tags,category,metadata,owner_id,author_id)
-      values (${this.tenant},${key},${space},${parent},${position},${string(body.title)},${content},
+    await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,blocks,tags,category,metadata,owner_id,author_id)
+      values (${this.tenant},${key},${space},${parent},${position},${string(body.title)},${content},${JSON.stringify(blocks)}::jsonb,
       ${tags(body.tags)}::text[],${body.category == null ? null : string(body.category)},${JSON.stringify(metadata)}::jsonb,${optionalId(body.ownerId)},${this.member})`.execute(
       this.tx,
     );
@@ -249,7 +283,12 @@ export class Wiki {
     ).rows;
     const visible = [];
     for (const row of rows) {
-      const { content, ...summary } = await this.visiblePage(row);
+      const {
+        content,
+        blocks: _blocks,
+        ...summary
+      } = await this.visiblePage(row);
+      void _blocks;
       const position = term
         ? content.toLowerCase().indexOf(term.toLowerCase())
         : -1;
@@ -305,8 +344,8 @@ export class Wiki {
         node.id === root.id ? parent : copies.get(node.parent_id!)!;
       const source = await this.page(node.id);
       await this.resource(key, destination ?? space, source.classification);
-      await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,tags,category,metadata,owner_id,author_id)
-        select tenant_id,${key},${space},${destination},case when id=${root.id} then ${position}::integer else position end,title,content,tags,category,metadata,owner_id,${this.member}
+      await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,blocks,tags,category,metadata,owner_id,author_id)
+        select tenant_id,${key},${space},${destination},case when id=${root.id} then ${position}::integer else position end,title,content,blocks,tags,category,metadata,owner_id,${this.member}
         from km.wiki_pages where id=${node.id}`.execute(this.tx);
     }
     return { id: copies.get(root.id) };
@@ -558,8 +597,20 @@ export class Wiki {
       }
       if (body.metadata !== undefined)
         await this.validateMetadata(page.space_id, input(body.metadata));
+      const blocks =
+        body.blocks !== undefined
+          ? parseBlocks(body.blocks)
+          : body.content === undefined
+            ? page.blocks
+            : [];
+      const content =
+        body.blocks !== undefined
+          ? blocks.map((block) => block.text).join("\n")
+          : body.content === undefined
+            ? page.content
+            : document(body.content);
       await sql`update km.wiki_pages set title=${body.title === undefined ? page.title : string(body.title)},
-        content=${body.content === undefined ? page.content : document(body.content)},
+        content=${content},blocks=${JSON.stringify(blocks)}::jsonb,
         tags=${body.tags === undefined ? page.tags : tags(body.tags)}::text[],
         category=${body.category === undefined ? page.category : body.category === null ? null : string(body.category)},
         metadata=${JSON.stringify(body.metadata === undefined ? page.metadata : input(body.metadata))}::jsonb,
@@ -579,7 +630,7 @@ export class Wiki {
       return result;
     }
     if (section === "relations") return this.relations(key, method, body, leaf);
-    if (section === "comments") return this.comments(key, method, body, leaf);
+    if (section === "comments") return this.comments(page, method, body, leaf);
     if (section === "attachments")
       return this.attachments(key, method, body, leaf);
     throw missing();
@@ -733,9 +784,15 @@ export class Wiki {
     await sql`delete from km.wiki_comments where page_id=any(${pages}::uuid[])`.execute(
       this.tx,
     );
-    await sql`delete from km.wiki_attachments where page_id=any(${pages}::uuid[])`.execute(
+    const objects = await sql<{
+      id: string;
+      object_size: number | null;
+    }>`delete from km.wiki_attachments
+      where page_id=any(${pages}::uuid[]) returning id,object_size`.execute(
       this.tx,
     );
+    for (const file of objects.rows)
+      if (file.object_size !== null) this.removals.add(file.id);
     await sql`delete from km.wiki_pages where id=any(${pages}::uuid[])`.execute(
       this.tx,
     );
@@ -842,14 +899,16 @@ export class Wiki {
     throw missing();
   }
   private async comments(
-    key: string,
+    page: Page,
     method: string,
     body: Body,
     leaf?: string,
   ) {
+    const key = page.id;
+    const blocks = page.blocks.map((block) => block.id);
     if (method === "GET")
       return (
-        await sql`select id,root_id,actor_id,anchor,body,resolved,history,created_at
+        await sql`select id,root_id,actor_id,anchor,body,resolved,history,created_at,(anchor is not null and not (anchor=any(${blocks}::uuid[]))) as orphaned
       from km.wiki_comments where page_id=${key} order by created_at,id`.execute(
           this.tx,
         )
@@ -868,6 +927,8 @@ export class Wiki {
         ).rows.length
       )
         throw missing();
+      const anchor = optionalId(body.anchor);
+      if (anchor && (root || !blocks.includes(anchor))) throw invalid();
       const mentions = body.mentions ?? [];
       if (!Array.isArray(mentions) || mentions.length > 10) throw invalid();
       const recipients = [];
@@ -905,7 +966,7 @@ export class Wiki {
           recipients.push(recipient);
       }
       await sql`insert into km.wiki_comments(tenant_id,page_id,id,root_id,actor_id,anchor,body,mentions)
-        values (${this.tenant},${key},${comment},${root},${member},${optionalId(body.anchor)},${string(body.text, 4000)},${recipients}::uuid[])`.execute(
+        values (${this.tenant},${key},${comment},${root},${member},${anchor},${string(body.text, 4000)},${recipients}::uuid[])`.execute(
         this.tx,
       );
       await this.event("comment.create", key);
@@ -933,61 +994,85 @@ export class Wiki {
   ) {
     if (method === "GET" && !leaf)
       return (
-        await sql`select id,filename,content_type,sha256,scan_state,octet_length(bytes) as size
-      from km.wiki_attachments where page_id=${key} order by filename,id`.execute(
+        await sql`select id,filename,content_type,sha256,scan_state,
+      coalesce(object_size,octet_length(bytes)) as size from km.wiki_attachments where page_id=${key} order by filename,id`.execute(
           this.tx,
         )
       ).rows;
-    if (method === "GET" && leaf) {
-      const result = await sql<{
-        bytes: Buffer;
-        filename: string;
-        content_type: string;
-      }>`select bytes,filename,content_type
-        from km.wiki_attachments where page_id=${key} and id=${id(leaf)} and scan_state='clean'`.execute(
+    if (leaf && (method === "GET" || method === "POST")) {
+      if (method === "POST") await this.require("content.edit", key);
+      const file = (
+        await sql<{
+          id: string;
+          bytes: Buffer | null;
+          filename: string;
+          content_type: string;
+          sha256: string;
+          scan_state: string;
+        }>`
+        select id,bytes,filename,content_type,sha256,scan_state from km.wiki_attachments
+        where page_id=${key} and id=${id(leaf)}
+      `.execute(this.tx)
+      ).rows[0];
+      if (
+        !file ||
+        (method === "GET" && file.scan_state !== "clean") ||
+        (method === "POST" && file.scan_state !== "pending")
+      )
+        throw missing();
+      const bytes = file.bytes ?? (await readObject(this.tenant, file.id));
+      if (createHash("sha256").update(bytes).digest("hex") !== file.sha256)
+        throw new Error("Attachment integrity mismatch");
+      if (method === "GET") {
+        await this.event("attachment.download", key);
+        return {
+          filename: file.filename,
+          contentType: file.content_type,
+          data: bytes.toString("base64"),
+        };
+      }
+      const scanState = await scanAttachment(bytes);
+      await sql`update km.wiki_attachments set scan_state=${scanState} where page_id=${key} and id=${file.id}`.execute(
         this.tx,
       );
-      const file = result.rows[0];
-      if (!file) throw missing();
-      await this.event("attachment.download", key);
-      return {
-        filename: file.filename,
-        contentType: file.content_type,
-        data: file.bytes.toString("base64"),
-      };
+      await this.event("attachment.scan." + scanState, key);
+      return { id: file.id, scanState };
     }
     await this.require("content.edit", key);
-    if (method === "POST") {
+    if (method === "POST" && !leaf) {
       const { filename, type, bytes } = attachmentInput(body);
-      const scanState = await scanAttachment(bytes);
-      if (scanState === "rejected") {
-        await this.event("attachment.rejected", key);
-        return { scanState };
-      }
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      if (body.sha256 !== undefined && body.sha256 !== hash) throw invalid();
       const loaded = (
         await sql<{
           total: number;
-        }>`select coalesce(sum(octet_length(bytes)),0)::int total from km.wiki_attachments`.execute(
-          this.tx,
-        )
+        }>`select coalesce(sum(coalesce(object_size,octet_length(bytes))),0)::int total
+        from km.wiki_attachments`.execute(this.tx)
       ).rows[0]!.total;
-      if (loaded + bytes.length > 10 * 1024 * 1024)
+      if (loaded + bytes.length > 50 * 1024 * 1024)
         throw new IdentityError(429);
       const upload = randomUUID();
-      const hash = createHash("sha256").update(bytes).digest("hex");
-      await sql`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,bytes,sha256,scan_state)
-        values (${this.tenant},${key},${upload},${filename},${type},${bytes},${hash},${scanState})`.execute(
+      this.writes.add(upload);
+      await putObject(this.tenant, upload, bytes);
+      const scanState = await scanAttachment(bytes);
+      await sql`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,object_size,sha256,scan_state)
+        values (${this.tenant},${key},${upload},${filename},${type},${bytes.length},${hash},${scanState})`.execute(
         this.tx,
       );
-      await this.event("attachment.stage", key);
+      await this.event("attachment.scan." + scanState, key);
       return { id: upload, sha256: hash, scanState };
     }
     if (method === "DELETE" && leaf) {
-      const deleted =
-        await sql`delete from km.wiki_attachments where page_id=${key} and id=${id(leaf)} returning id`.execute(
-          this.tx,
-        );
-      if (!deleted.rows.length) throw missing();
+      const deleted = await sql<{
+        id: string;
+        object_size: number | null;
+      }>`delete from km.wiki_attachments
+        where page_id=${key} and id=${id(leaf)} returning id,object_size`.execute(
+        this.tx,
+      );
+      const file = deleted.rows[0];
+      if (!file) throw missing();
+      if (file.object_size !== null) this.removals.add(file.id);
       await this.event("attachment.delete", key);
       return { id: leaf };
     }

@@ -35,12 +35,13 @@ JS
 }
 
 migrate() {
-  local checksum identity_checksum worker_checksum wiki_checksum
+  local checksum identity_checksum worker_checksum wiki_checksum wiki_objects_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
   identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
   worker_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v3-up.sql")).digest("hex"))')"
   wiki_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v4-up.sql")).digest("hex"))')"
-  db -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
+  wiki_objects_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v5-up.sql")).digest("hex"))')"
+  db -v "wiki_objects_checksum=$wiki_objects_checksum" -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {
@@ -49,7 +50,7 @@ verify_fixture() {
     AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'km_app')
     AND EXISTS (SELECT FROM pg_policies WHERE schemaname='km' AND tablename='fixture_objects' AND policyname='fixture_isolation')
     FROM pg_class WHERE oid='km.fixture_objects'::regclass")" == t ]]
-  db -Atc 'SELECT id, checksum FROM km.fixture_objects ORDER BY tenant_id, id' | storage check
+  db -Atc "SELECT id::text, checksum FROM km.fixture_objects UNION ALL SELECT tenant_id::text||'/'||id::text,sha256 FROM km.wiki_attachments WHERE object_size IS NOT NULL" | storage check
 }
 
 setup() {

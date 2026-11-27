@@ -156,11 +156,20 @@ assert.equal(
   (await request("GET", "/pages/" + child.id + "/relations"))[0].source_id,
   root.id,
 );
-const comment = await request(
-  "POST",
-  "/pages/" + root.id + "/comments",
-  fixtures.comment,
-);
+const anchor = randomUUID();
+const sibling = randomUUID();
+const pageBefore = await request("GET", "/pages/" + root.id);
+await request("PATCH", "/pages/" + root.id, {
+  revision: pageBefore.revision,
+  blocks: [
+    { id: anchor, text: pageBefore.content },
+    { id: sibling, text: "Outro bloco" },
+  ],
+});
+const comment = await request("POST", "/pages/" + root.id + "/comments", {
+  ...fixtures.comment,
+  anchor,
+});
 await request("POST", "/pages/" + root.id + "/comments", {
   ...fixtures.comment,
   rootId: comment.id,
@@ -174,7 +183,39 @@ assert.equal(
   ).history.length,
   1,
 );
+const inspectAnchor = async () =>
+  (await request("GET", "/pages/" + root.id + "/comments")).find(
+    (row) => row.id === comment.id,
+  );
+const beforeMove = await request("GET", "/pages/" + root.id);
+await request("PATCH", "/pages/" + root.id, {
+  revision: beforeMove.revision,
+  blocks: [...beforeMove.blocks].reverse(),
+});
+assert.equal((await inspectAnchor()).orphaned, false);
+const afterMove = await request("GET", "/pages/" + root.id);
+await request("PATCH", "/pages/" + root.id, {
+  revision: afterMove.revision,
+  blocks: afterMove.blocks
+    .filter((block) => block.id !== anchor)
+    .map((block) => ({ ...block, text: pageBefore.content })),
+});
+assert.equal((await inspectAnchor()).orphaned, true);
+assert.equal((await inspectAnchor()).anchor, anchor);
 await request("GET", "/pages/" + root.id + "/comments", undefined, adminB, 404);
+const attachmentPath = "/pages/" + root.id + "/attachments";
+const upload = {
+  filename: "sample.txt",
+  contentType: "text/plain",
+  data: "dGVzdGUK",
+};
+const scanner = (operation) =>
+  execFileSync(
+    "bash",
+    ["scripts/wiki-clamd.sh", operation, process.env.KM_SCAN_DIR],
+    { stdio: "inherit" },
+  );
+scanner("stop");
 const attachment = await request("POST", "/pages/" + root.id + "/attachments", {
   filename: "sample.txt",
   contentType: "text/plain",
@@ -187,6 +228,49 @@ await request(
   undefined,
   adminA,
   404,
+);
+scanner("start");
+await request(
+  "POST",
+  attachmentPath,
+  { ...upload, sha256: "0".repeat(64) },
+  adminA,
+  400,
+);
+const scan = await request("POST", attachmentPath + "/" + attachment.id, {});
+assert.equal(scan.scanState, "clean");
+assert.equal(
+  (await request("GET", attachmentPath + "/" + attachment.id)).data,
+  upload.data,
+);
+await request(
+  "GET",
+  attachmentPath + "/" + attachment.id,
+  undefined,
+  adminB,
+  404,
+);
+const malicious = await request("POST", attachmentPath, {
+  ...upload,
+  data: Buffer.from("KM-WIKI-LOCAL-SIGNATURE").toString("base64"),
+});
+assert.equal(malicious.scanState, "rejected");
+await request(
+  "GET",
+  attachmentPath + "/" + malicious.id,
+  undefined,
+  adminA,
+  404,
+);
+await request("DELETE", attachmentPath + "/" + malicious.id);
+assert.equal(
+  db(
+    `select count(*) from km.wiki_attachments where tenant_id='${tenant}' and id='${attachment.id}' and bytes is null`,
+  ),
+  "1",
+);
+console.log(
+  "Wiki scan real: indisponibilidade, quarentena, assinatura local e liberação autorizada",
 );
 const template = await request("POST", "/templates", {
   spaceId: space.id,

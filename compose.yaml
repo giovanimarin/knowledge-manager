@@ -63,6 +63,15 @@ services:
 
   api:
     <<: *app
+    environment:
+      <<: *app-env
+      KM_CLAMD_SOCKET: ${KM_CLAMD_SOCKET:-}
+    volumes:
+      - storage:/var/lib/km
+      - type: bind
+        source: ${KM_SCAN_DIR:-./infra}
+        target: /km-scan
+        read_only: true
     build:
       context: .
       target: runtime

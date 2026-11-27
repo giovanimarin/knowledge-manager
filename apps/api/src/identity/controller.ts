@@ -121,16 +121,31 @@ export class IdentityController {
         5,
       );
     }
-    return this.sessions.withActor(auth, async (tx, tenant, actor) => {
-      if (pathname.startsWith("/v1/wiki/")) {
-        const query = new URL(req.url ?? "/", "http://localhost").searchParams;
-        return new Wiki(tx, tenant, actor).dispatch(
-          req.method ?? "",
-          pathname,
-          body,
-          query,
+    if (pathname.startsWith("/v1/wiki/")) {
+      const holder: { wiki?: Wiki } = {};
+      let committed = false;
+      try {
+        const result = await this.sessions.withActor(
+          auth,
+          async (tx, tenant, actor) => {
+            const query = new URL(req.url ?? "/", "http://localhost")
+              .searchParams;
+            holder.wiki = new Wiki(tx, tenant, actor);
+            return holder.wiki.dispatch(
+              req.method ?? "",
+              pathname,
+              body,
+              query,
+            );
+          },
         );
+        committed = true;
+        return result;
+      } finally {
+        await holder.wiki?.finishObjects(committed);
       }
+    }
+    return this.sessions.withActor(auth, async (tx, tenant, actor) => {
       if (key === "GET /v1/me") {
         if (actor.kind === "service")
           return {

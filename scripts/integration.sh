@@ -9,6 +9,8 @@ export KM_IDENTITY_KEY="$shared_key"
 export KM_DEPLOYMENT_MODE=shared
 artifacts="${KM_ARTIFACTS_DIR:-artifacts}"
 mkdir -p "$artifacts"
+export KM_SCAN_DIR="$scratch/scanner"
+export KM_CLAMD_SOCKET=/km-scan/clamd.sock
 
 use_project() {
   export COMPOSE_PROJECT_NAME="$prefix-$1"
@@ -27,10 +29,13 @@ cleanup() {
       compose down -v --remove-orphans >/dev/null 2>&1
     fi
   done
+  bash scripts/wiki-clamd.sh stop "$KM_SCAN_DIR"
+  if [[ -f "$KM_SCAN_DIR/clamd.log" ]]; then cp "$KM_SCAN_DIR/clamd.log" "$artifacts/clamd.log"; fi
   rm -rf -- "$scratch"
   exit "$status"
 }
 trap cleanup EXIT
+bash scripts/wiki-clamd.sh start "$KM_SCAN_DIR"
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
