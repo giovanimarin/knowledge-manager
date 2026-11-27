@@ -43,7 +43,7 @@ make setup
 echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
 node scripts/identity-integration.mjs primary "$scratch/identity"
-node scripts/wiki-integration.mjs "$scratch/identity"
+node scripts/wiki-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
 compose up -d --wait --no-build --scale api=2 --scale worker=2
 for index in 1 2; do
   compose exec -T --index "$index" api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r=>{if(!r.ok) process.exit(1)})'
@@ -54,7 +54,7 @@ node scripts/identity-integration.mjs quota "$scratch/identity"
 node scripts/worker-integration.mjs "$scratch/identity" "$artifacts/worker-metrics.json"
 echo "Escala local: duas réplicas API e worker saudáveis com fila e PostgreSQL compartilhados"
 compose up -d --wait --no-build --scale api=1 --scale worker=1
-pnpm test:e2e
+KM_WIKI_BROWSER_FIXTURE="$scratch/wiki-browser" pnpm test:e2e
 node scripts/benchmark.mjs
 
 compose stop db

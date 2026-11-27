@@ -1,3 +1,4 @@
+import { Wiki } from "./wiki";
 import { useState, type FormEvent } from "react";
 
 type Credentials = {
@@ -297,6 +298,9 @@ export function Identity() {
           >
             Sair ou trocar de organização
           </button>
+          {(!profile.mfaRequired || profile.mfaEnrolled) && (
+            <Wiki key={credentials.sessionId} token={credentials.accessToken} />
+          )}
         </>
       )}
       {!credentials && !challenge && (

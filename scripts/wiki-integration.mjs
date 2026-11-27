@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
-const [, , identityFile] = process.argv;
-const { tenant, adminA, adminB, adminMemberA } = JSON.parse(
+const [, , identityFile, browserFile] = process.argv;
+const { tenant, adminA, adminB, adminMemberA, secret } = JSON.parse(
   readFileSync(identityFile, "utf8"),
 );
 const fixtures = JSON.parse(
@@ -35,7 +35,10 @@ const db = (query) =>
   ).trim();
 async function request(method, path, body, token = adminA, expected = 200) {
   const response = await fetch(
-    new URL("/v1/wiki" + path, process.env.KM_BASE_URL),
+    new URL(
+      path.startsWith("/v1/") ? path : "/v1/wiki" + path,
+      process.env.KM_BASE_URL,
+    ),
     {
       method,
       headers: {
@@ -203,6 +206,24 @@ assert.deepEqual(await request("GET", "/pages/" + child.id + "/relations"), []);
 assert.equal(db("set role km_app; select count(*) from km.wiki_pages"), "0");
 db(
   `delete from km.identity_grants where tenant_id='${tenant}' and id='${deny}'`,
+);
+const email = "wiki-reader@example.invalid";
+const invitation = await request("POST", "/v1/members", {
+  email,
+  name: "Leitura da wiki",
+});
+const browserMember = await request(
+  "POST",
+  "/v1/invitations/accept",
+  { proof: invitation.proof, password: secret },
+  null,
+);
+db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect)
+ values ('${tenant}',gen_random_uuid(),'${role}','${browserMember.id}','${space.id}','allow')`);
+writeFileSync(
+  browserFile,
+  JSON.stringify({ tenant, email, password: secret }),
+  { mode: 0o600 },
 );
 console.log(
   "Wiki G1/G2: árvore, ACL ativa, busca, comentários, anexos em quarentena, templates e restauração",
