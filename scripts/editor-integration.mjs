@@ -176,11 +176,18 @@ try {
     assert.match(merged, / B/);
     doc.destroy();
   }
-  a.ws.send(JSON.stringify(updates[0].packet));
-  await frame(
-    a,
-    (x) => x.type === "ack" && x.operationId === updates[0].packet.operationId,
+  const replay = updates[0].packet;
+  const priorAck = a.frames.findIndex(
+    (frame) => frame.type === "ack" && frame.operationId === replay.operationId,
   );
+  assert.ok(priorAck >= 0);
+  a.frames.splice(priorAck, 1);
+  a.ws.send(JSON.stringify(replay));
+  const repeated = await frame(
+    a,
+    (entry) => entry.type === "ack" && entry.operationId === replay.operationId,
+  );
+  assert.equal(repeated.sequence, receipts[0].sequence);
   assert.equal(
     db(
       `select count(*) from km.editor_receipts where tenant_id='${tenant}' and page_id='${root}'`,
