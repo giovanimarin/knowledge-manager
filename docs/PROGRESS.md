@@ -1,12 +1,12 @@
 # Acompanhamento do projeto
 
-Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 1/18 pacotes aceitos. PKG-01 concluído; PKG-02 em validação no PR #8.
+Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 2/18 pacotes aceitos. PKG-01 e PKG-02 concluídos; PKG-03 é o próximo pacote.
 
 ## Método
 Atualizar em cada PR: pacote, marco, tarefa/subtarefa, estado (pendente, em execução, bloqueado, em validação, concluído), evidência por commit/teste, pendências e próximo passo. Não inferir progresso de código escrito. Concluído exige evidência e aceite aplicável. Percentual do pacote ponderado por marcos e fração de subtarefas verificadas; pesos iniciais PKG-01 22/28/28/22, revisáveis explicitamente. Percentual global de pacotes aceitos separado de esforço ponderado e de prontidão comercial. Gates sandbox/produção pendentes não contam como comprovados. Registrar tempo real quando disponível, sem inventar horas. Manter roadmap e escopo normativo intactos.
 
 ## Pacotes
-PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 em validação; PKG-03,04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
+PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 concluído e integrado; PKG-03 autorizado para planejamento e implementação; PKG-04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
 
 ## PKG-01 — acompanhamento de implementação
 
@@ -102,9 +102,9 @@ O plano foi registrado no commit `636adc5`, antes da implementação. O [PR #8](
 | I2 | I2.1–I2.4 | Bootstrap, convites, senhas Argon2id, limites, MFA e códigos de recuperação, rotatividade e reuso, revogação ativa e troca de empresa. [Roteiro de operação](packages/PKG-02-runbook.md). |
 | I3 | I3.1–I3.4 | Papéis e grupos, herança, negação prioritária, administração sem privilégio implícito de conteúdo, chaves de API e delegação testadas com tokens e banco reais. Reforços `7f2d251`. |
 | I4 | I4.1 e I4.3 | Shared A/B e dedicado C, bloqueio entre stacks, regressão de inicialização limpa, falhas do banco e Redis, backup, restore e migrações; instalação dedicada de organização única em `62e9fea` e saída estruturada em `e11db06`. |
-| I4 | I4.2 e I4.4 concluídas | `0bf5f46` aplica limites e leases no worker. O Actions comprovou duas réplicas, dois tenants simultâneos, isolamento de quotas, pico global, renovação, expiração, recuperação, retry e nenhum efeito duplicado. Os três checks do commit passaram, incluindo regressão do PKG-01 e isolamento shared/dedicated. A revisão final do PR permanece pendente. |
+| I4 | I4.2 e I4.4 concluídas | `0bf5f46` aplica limites e leases no worker. O Actions comprovou duas réplicas, dois tenants simultâneos, isolamento de quotas, pico global, renovação, expiração, recuperação, retry e nenhum efeito duplicado. Os três checks do commit passaram, incluindo regressão do PKG-01 e isolamento shared/dedicated. Revisão final realizada, PR #8 integrado no commit `bbe7d08f2a05dca3fe5a42fd2d33cdd6747cd7a0`. |
 
-Validação ponderada registrada **100%** (I1 4/4, I2 4/4, I3 4/4, I4 4/4). Pacotes aceitos **1/18**. A primeira rodada integrada passou pelos três checks em `f83a8f9`. O replay de prova de MFA, o bloqueio após restore e o provisionamento dedicado foram refinados nas rodadas seguintes. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45925880256) · [Execução do código após os refinamentos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45926503444).
+Validação ponderada registrada **100%** (I1 4/4, I2 4/4, I3 4/4, I4 4/4). Pacotes aceitos **2/18 (11,1%)**. A primeira rodada integrada passou pelos três checks em `f83a8f9`. O replay de prova de MFA, o bloqueio após restore e o provisionamento dedicado foram refinados nas rodadas seguintes. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45925880256) · [Execução do código após os refinamentos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45926503444).
 
 A tentativa de repetir toda a instalação no runner local foi interrompida por falta de espaço no armazenamento Docker. A validação Compose completa segue no GitHub Actions, em instalações descartáveis. Gates de sandbox e rollout continuam vinculados aos pacotes definidos no roadmap.
 
@@ -114,3 +114,10 @@ A tentativa de repetir toda a instalação no runner local foi interrompida por 
 - Duas réplicas processaram A e B simultaneamente. Picos reais de **1** job para A, **2** para B e **3** na stack. A segunda admissão de A ocorreu após **6.981,42 ms**, acima da janela de 6.500 ms. B completou quatro jobs enquanto A ainda aguardava a segunda admissão.
 - Lease inicial de 3 s renovado durante job de 4,6 s. Após matar a réplica proprietária, B continuou e A voltou a concluir em **6.946 ms**, medidos da queda até o recibo. O token anterior foi recusado após a retomada. Falha transacional explícita na primeira tentativa, sucesso no retry e zero efeitos duplicados.
 - Os três checks obrigatórios passaram no head de implementação `0bf5f46`. No smoke limpo, o Playwright passou 3/3 em 2,0 s, o backup levou 10 s e a restauração 14 s. O teste incluiu regressão de PKG-01 e os negativos multiempresa. A suíte revisada em `3664233` também acrescenta negativo do worker dedicado e teste unitário do contrato. O `pnpm verify` local nessa revisão executou oito testes em 2,189 s, todos aprovados. [Execução do código](https://github.com/giovanimarin/knowledge-manager/actions/runs/45928682541) · [Logs e worker-metrics.json](https://github.com/giovanimarin/knowledge-manager/actions/runs/45928682541/artifacts/15167797503) · [Execução com teste dedicado](https://github.com/giovanimarin/knowledge-manager/actions/runs/45928853423).
+
+## Encerramento formal PKG-02
+
+- PR #8 aceito tecnicamente e integrado à main em `bbe7d08f2a05dca3fe5a42fd2d33cdd6747cd7a0`; head de aceite `460071e64cc95f0a51ad90dcda95862157a43c47`.
+- I1–I4 concluídos, 16/16 subtarefas verificadas, 100% no nível do pacote; CI obrigatório 3/3 verde na [execução 45929121586](https://github.com/giovanimarin/knowledge-manager/actions/runs/45929121586), incluindo regressão do PKG-01, shared A/B e dedicated C, concorrência worker/leases e negativos.
+- Progresso geral por pacotes aceitos: **2/18 (11,1%)**. Não é percentual de esforço, cobertura total do produto ou prontidão comercial.
+- Próximo PKG-03: organizar espaço, árvore, conteúdo, anexos, metadados, comentários, busca textual e segurança da wiki. Planejar marcos/subtarefas e publicar contratos/fixtures antes de implementar; integrar testes de regressão PKG-01/02. Não reabrir nem reduzir o escopo aprovado.
