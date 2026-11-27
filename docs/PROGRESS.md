@@ -121,3 +121,16 @@ A tentativa de repetir toda a instalação no runner local foi interrompida por 
 - I1–I4 concluídos, 16/16 subtarefas verificadas, 100% no nível do pacote; CI obrigatório 3/3 verde na [execução 45929121586](https://github.com/giovanimarin/knowledge-manager/actions/runs/45929121586), incluindo regressão do PKG-01, shared A/B e dedicated C, concorrência worker/leases e negativos.
 - Progresso geral por pacotes aceitos: **2/18 (11,1%)**. Não é percentual de esforço, cobertura total do produto ou prontidão comercial.
 - Próximo PKG-03: organizar espaço, árvore, conteúdo, anexos, metadados, comentários, busca textual e segurança da wiki. Planejar marcos/subtarefas e publicar contratos/fixtures antes de implementar; integrar testes de regressão PKG-01/02. Não reabrir nem reduzir o escopo aprovado.
+
+## PKG-03 — plano de implementação
+
+Estimativa de 128–216 h do roadmap. O peso de cada marco é distribuído igualmente entre suas quatro subtarefas. Validação inicial 0/16. Aceite do pacote depende de revisão e dos gates aplicáveis.
+
+| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
+| --- | --- | --- |
+| W1 Espaços, acl e árvore · 30% | 38–64 h | W1.1 espaços e participação múltipla com negação padrão; W1.2 documentos e navegação multinível com IDs estáveis; W1.3 mover/duplicar sem ciclos nem mutação parcial e com verificação de origem/destino; W1.4 revogação ativa e isolamento A/B/C, inclusive em resultados derivados. |
+| W2 Interação e recuperação de conteúdo · 25% | 32–54 h | W2.1 threads ancoradas/gerais com histórico, resolução e menções autorizadas; W2.2 metadados por espaço, responsáveis, classificação e filtros; W2.3 backlinks, tipos, links quebrados e exploração autorizada; W2.4 busca textual com filtros e sem snippets ou contagens de documentos negados. |
+| W3 Arquivos e ciclo de vida · 30% | 38–66 h | W3.1 anexos e limites por empresa com validação, scan, visualização e download autorizado; W3.2 importação/exportação no escopo C3 com fixtures de fidelidade e manifesto de perdas; W3.3 templates com revisões independentes; W3.4 exclusão e restauração da subárvore/espaço, retenção e purga auditada. |
+| W4 Experiência e evidência · 15% | 20–32 h | W4.1 interface U3/U4 acessível e sem metadados negados; W4.2 contrato e integração reais com negativos por operação; W4.3 regressão 01/02 e três checks; W4.4 relatório com artefatos e medições G1/G2/G3 aplicáveis. |
+
+[Contratos e fixtures](packages/PKG-03-contracts.md) · [Matriz normativa](specification/traceability.md)
