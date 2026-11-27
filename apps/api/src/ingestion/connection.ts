@@ -4,6 +4,7 @@ import { EditorStore } from "../editor/store.js";
 import {
   IdentityError,
   id,
+  input,
   seal,
   string,
   unseal,
