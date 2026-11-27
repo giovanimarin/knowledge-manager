@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { Dependencies } from "@km/foundation";
 import type { Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Sessions } from "../identity/sessions.js";
@@ -14,7 +16,11 @@ type Connection = {
   cursor: Cursor | null;
 };
 
-export function installCollaboration(server: Server, sessions: Sessions) {
+export function installCollaboration(
+  server: Server,
+  sessions: Sessions,
+  dependencies: Dependencies,
+) {
   const sockets = new WebSocketServer({
     noServer: true,
     perMessageDeflate: false,
@@ -43,6 +49,9 @@ export function installCollaboration(server: Server, sessions: Sessions) {
     let sequence = -1;
     let generation = "";
     let presence = "";
+    const connection = randomUUID();
+    let editable: boolean | undefined;
+    let policyEpoch = "";
     let busy = false;
     let queued = 0;
     let queue = Promise.resolve();
@@ -91,18 +100,28 @@ export function installCollaboration(server: Server, sessions: Sessions) {
         cursor: previous?.cursor ?? null,
       });
       const { snapshot, write, epoch } = result;
-      if (sequence !== result.sequence || generation !== result.generation) {
+      if (
+        sequence !== result.sequence ||
+        generation !== result.generation ||
+        editable !== write ||
+        policyEpoch !== epoch
+      ) {
+        editable = write;
+        policyEpoch = epoch;
         sequence = result.sequence;
         generation = result.generation;
         send({ type: "sync", snapshot, sequence, generation, write, epoch });
       }
       const participants = new Map<string, Participant>();
-      for (const peer of peers.values()) {
-        if (peer.tenant === result.tenant && peer.page === page)
-          participants.set(peer.member, {
-            id: peer.member,
-            cursor: peer.cursor,
-          });
+      const entries = await dependencies.updatePresence(
+        result.tenant,
+        page,
+        connection,
+        JSON.stringify({ id: result.member, cursor: previous?.cursor ?? null }),
+      );
+      for (const raw of entries) {
+        const peer = JSON.parse(raw) as Participant;
+        participants.set(peer.id, peer);
       }
       const next = JSON.stringify([...participants.values()]);
       if (presence !== next) {
@@ -122,7 +141,12 @@ export function installCollaboration(server: Server, sessions: Sessions) {
     ws.on("close", () => {
       clearTimeout(authTimer);
       clearInterval(timer);
+      const peer = peers.get(ws);
       peers.delete(ws);
+      if (peer)
+        void dependencies
+          .removePresence(peer.tenant, peer.page, connection)
+          .catch(() => {});
     });
     ws.on("message", (raw, isBinary) => {
       if (++queued > 16) {

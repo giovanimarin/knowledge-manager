@@ -180,7 +180,7 @@ restore() {
 command="${1:-}"
 shift || true
 case "$command" in
-  setup|start|stop|smoke|backup|restore|bootstrap|wiki-retention)
+  setup|start|stop|smoke|backup|restore|bootstrap|wiki-retention|editor-maintenance)
     [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Projeto Compose inválido' >&2; exit 1; }
     lock="${TMPDIR:-/tmp}/km-compose-$COMPOSE_PROJECT_NAME.lock"
     mkdir "$lock" || { echo 'Outra operação está ativa para este projeto' >&2; exit 1; }
@@ -198,6 +198,7 @@ case "$command" in
   smoke) bash scripts/smoke.sh ;;
   backup) backup "$@" ;;
   wiki-retention) wiki_retention ;;
+  editor-maintenance) db -f /km-infra/editor-maintenance.sql ;;
   restore) restore "$@" ;;
   *) echo 'Operação desconhecida' >&2; exit 1 ;;
 esac

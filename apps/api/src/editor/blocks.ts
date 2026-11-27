@@ -54,7 +54,14 @@ export function validateBlocks(value: unknown): Block[] {
       )
         throw invalid();
       try {
-        const url = new URL(row.url);
+        const localImage =
+          kind === "image" &&
+          /^\/v1\/wiki\/pages\/[a-f0-9-]{36}\/attachments\/[a-f0-9-]{36}$/i.test(
+            row.url,
+          );
+        const url = localImage
+          ? new URL(row.url, "https://knowledge.invalid")
+          : new URL(row.url);
         if (url.protocol !== "https:" || url.username || url.password)
           throw invalid();
       } catch {

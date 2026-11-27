@@ -52,6 +52,7 @@ async function main() {
   const closeSockets = installCollaboration(
     api.getHttpServer(),
     api.get(Sessions),
+    dependencies,
   );
   console.log(JSON.stringify({ service: "api", event: "listening" }));
 

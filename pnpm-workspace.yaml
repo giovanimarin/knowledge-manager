@@ -14,5 +14,6 @@ minimumReleaseAgeExclude:
   - "@nestjs/core@12.6.3"
   - "@nestjs/platform-express@12.6.3"
   - unpdf@2.2.3
+  - mermaid@12.4.0
 overrides:
   protobufjs: 8.8.1

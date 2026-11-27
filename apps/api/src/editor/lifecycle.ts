@@ -72,6 +72,27 @@ export class Lifecycle {
   }
   async dispatch(method: string, path: string, body: Record<string, unknown>) {
     if (method !== "GET") await this.store.lock();
+    if (path === "/v1/editor/notifications" && method === "GET") {
+      if (!this.store.member) throw missing();
+      const rows = (
+        await sql<{
+          page_id: string;
+          kind: string;
+          revision: number;
+          occurred_at: Date;
+        }>`
+        select o.page_id,o.kind,o.revision,o.occurred_at from km.editor_outbox o
+        join km.wiki_pages p on(p.tenant_id,p.id)=(o.tenant_id,o.page_id)
+        where target_id=${this.store.member} and p.deleted_batch is null order by occurred_at desc limit 200`.execute(
+          this.tx,
+        )
+      ).rows;
+      const authorized = [];
+      for (const row of rows)
+        if (await this.store.can("content.read", row.page_id))
+          authorized.push(row);
+      return authorized;
+    }
     const policy = /^\/v1\/editor\/spaces\/([^/]+)\/policy$/.exec(path);
     if (policy) {
       const key = id(policy[1]);
@@ -181,6 +202,7 @@ export class Lifecycle {
         if (revision(body.expectedRevision) !== page.revision) throw conflict();
         const reviewer = id(body.reviewerId);
         if (reviewer === member) throw invalid();
+        if (!(await this.store.canReview(reviewer, page.id))) throw missing();
         await this.store.saveVersion(page);
         const review = randomUUID();
         await sql`insert into km.editor_reviews(tenant_id,page_id,id,revision,requested_by,reviewer_id)

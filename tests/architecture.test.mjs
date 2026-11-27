@@ -24,7 +24,7 @@ const layers = {
     "reflect-metadata",
   ]),
   "apps/worker": entrypoints,
-  "apps/web": new Set(["react", "react-dom/client", "yjs"]),
+  "apps/web": new Set(["react", "react-dom/client", "yjs", "mermaid"]),
   "packages/foundation": new Set([
     "@opentelemetry/api",
     "@opentelemetry/exporter-trace-otlp-http",

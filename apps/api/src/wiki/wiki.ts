@@ -1,3 +1,4 @@
+import { EditorStore, type Page as EditorPage } from "../editor/store.js";
 import {
   decodeFile,
   exportFiles,
@@ -32,20 +33,19 @@ function parseBlocks(value: unknown): Block[] {
 
 function reconcileBlocks(content: string, previous: Block[]): Block[] {
   if (!content) return [];
-  const available = new Map<string, string[]>();
+  const available = new Map<string, Block[]>();
   for (const block of previous) {
     const ids = available.get(block.text) ?? [];
-    ids.push(block.id);
+    ids.push(block);
     available.set(block.text, ids);
   }
   const lines = content.split("\n");
   // Adjacent lines above the block-count ceiling remain one final block.
   if (lines.length > 300)
     lines.splice(299, Infinity, lines.slice(299).join("\n"));
-  return lines.map((text) => ({
-    text,
-    id: available.get(text)?.shift() ?? randomUUID(),
-  }));
+  return lines.map(
+    (text) => available.get(text)?.shift() ?? { text, id: randomUUID() },
+  );
 }
 type Page = {
   id: string;
@@ -244,6 +244,24 @@ export class Wiki {
     return fields;
   }
 
+  private async saveEditorVersion(key: string) {
+    const page = (
+      await sql<EditorPage>`select id,space_id,revision,title,content,blocks from km.wiki_pages where id=${key}`.execute(
+        this.tx,
+      )
+    ).rows[0];
+    if (page)
+      await new EditorStore(this.tx, this.tenant, this.actor).saveVersion(page);
+  }
+
+  private async publicationVisibility(keys: string[], restored: boolean) {
+    await sql`insert into km.editor_outbox(tenant_id,page_id,publication_id,revision,kind)
+      select tenant_id,page_id,id,revision,${restored ? "published" : "withdrawn"} from km.editor_publications
+      where page_id=any(${keys}::uuid[]) and withdrawn_at is null and (expires_at is null or expires_at>now())`.execute(
+      this.tx,
+    );
+  }
+
   private async createPage(body: Body) {
     const space = id(body.spaceId);
     const parent = optionalId(body.parentId);
@@ -277,6 +295,7 @@ export class Wiki {
       ${tags(body.tags)}::text[],${body.category == null ? null : string(body.category)},${JSON.stringify(metadata)}::jsonb,${optionalId(body.ownerId)},${this.member})`.execute(
       this.tx,
     );
+    await this.saveEditorVersion(key);
     await this.event("page.create", key);
     return { id: key, revision: 1 };
   }
@@ -421,6 +440,10 @@ export class Wiki {
       this.tx,
     );
     await changeEpoch(this.tx, this.tenant);
+    await this.publicationVisibility(
+      children.map((child) => child.id),
+      restore,
+    );
     await this.event(restore ? "space.restore" : "space.trash", key);
     return { id: key };
   }
@@ -645,6 +668,7 @@ export class Wiki {
         metadata=${JSON.stringify(body.metadata === undefined ? page.metadata : input(body.metadata))}::jsonb,
         owner_id=${body.ownerId === undefined ? page.owner_id : optionalId(body.ownerId)},
         revision=revision+1,updated_at=now() where id=${key}`.execute(this.tx);
+      await this.saveEditorVersion(key);
       await this.event("page.update", key);
       return { id: key, revision: page.revision + 1 };
     }
@@ -981,6 +1005,10 @@ export class Wiki {
     await sql`update km.wiki_pages set deleted_batch=${key},deleted_at=now()
       where id=any(${tree.map((node) => node.id)}::uuid[])`.execute(this.tx);
     await changeEpoch(this.tx, this.tenant);
+    await this.publicationVisibility(
+      tree.map((item) => item.id),
+      false,
+    );
     await this.event("page.trash", key);
     return { id: key };
   }
@@ -1003,6 +1031,10 @@ export class Wiki {
       this.tx,
     );
     await changeEpoch(this.tx, this.tenant);
+    await this.publicationVisibility(
+      batch.map((item) => item.id),
+      true,
+    );
     await this.event("page.restore", key);
     return { id: key };
   }

@@ -293,6 +293,25 @@ try {
     expectedRevision: restored.revision,
   });
   await request("GET", route + "/publication", undefined, adminA, 404);
+  a.ws.close();
+  await a.closed;
+  const compose = (...args) =>
+    execFileSync(
+      "docker",
+      ["compose", "--env-file", process.env.KM_ENV_FILE, ...args],
+      { stdio: "inherit" },
+    );
+  compose("restart", "api");
+  compose("up", "-d", "--wait", "--no-build", "api");
+  const afterRestart = await connect(adminA);
+  try {
+    assert.equal(
+      (await frame(afterRestart, (x) => x.type === "sync")).sequence,
+      restored.revision,
+    );
+  } finally {
+    afterRestart.ws.close();
+  }
   console.log(
     "Editor G3: dois clientes reais, CRDT, presença/cursor, replay, reconexão, revogação, versões e publicação imutável",
   );

@@ -43,6 +43,43 @@ export class EditorStore {
   async require(action: Action, resource: string) {
     if (!(await this.can(action, resource))) throw missing();
   }
+  async canReview(member: string, key: string) {
+    const target = (
+      await sql<{
+        id: string;
+        admin: boolean;
+        require_mfa: boolean;
+        totp_secret: string | null;
+      }>`
+      select m.id,m.admin,(o.require_mfa or km.member_requires_mfa(m.tenant_id,m.id)) require_mfa,
+        case when m.totp_secret is null then null else 'enrolled' end totp_secret
+      from km.memberships m join km.organizations o using(tenant_id)
+      where m.id=${member} and m.state='active' and (m.guest_until is null or m.guest_until>now())
+    `.execute(this.tx)
+    ).rows[0];
+    if (
+      !target ||
+      ((target.admin || target.require_mfa) && !target.totp_secret)
+    )
+      return false;
+    const actor = {
+      kind: "member" as const,
+      member: { ...target, stepped_up: false },
+    };
+    for (const action of ["content.read", "content.approve"] as const) {
+      if (
+        !(await assess(this.tx, this.tenant, actor, {
+          action,
+          resource: key,
+          channel: "web",
+          purpose: "default",
+          external: false,
+        }))
+      )
+        return false;
+    }
+    return true;
+  }
   async page(key: string) {
     await this.require("content.read", key);
     const page = (

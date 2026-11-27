@@ -166,6 +166,31 @@ export class Dependencies {
     }
   }
 
+  async updatePresence(
+    tenant: string,
+    page: string,
+    connection: string,
+    value: string,
+  ) {
+    const key = `km:editor:presence:${tenant}:${page}`;
+    const result = await this.redis
+      .multi()
+      .hset(key, connection, value)
+      .call("HPEXPIRE", key, 3000, "FIELDS", 1, connection)
+      .expire(key, 5)
+      .hvals(key)
+      .exec();
+    if (!result || result.some(([error]) => error))
+      throw new Error("Presence unavailable");
+    const peers = result[3]?.[1];
+    if (!Array.isArray(peers)) throw new Error("Presence unavailable");
+    return peers as string[];
+  }
+
+  async removePresence(tenant: string, page: string, connection: string) {
+    await this.redis.hdel(`km:editor:presence:${tenant}:${page}`, connection);
+  }
+
   async inTenant<T>(
     tenant: string,
     action: (tx: import("kysely").Transaction<Database>) => Promise<T>,
