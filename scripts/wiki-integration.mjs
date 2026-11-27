@@ -292,9 +292,6 @@ assert.equal(
   ),
   "1",
 );
-db(
-  `update km.session_families set step_until=null where tenant_id='${tenant}' and member_id='${adminMemberA}'`,
-);
 const email = "wiki-reader@example.invalid";
 const invitation = await request("POST", "/v1/members", {
   email,
