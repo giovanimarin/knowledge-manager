@@ -391,7 +391,7 @@ async function dedicated() {
   );
   assert.notEqual(second.status, 0);
   assert.match(second.stderr, /dedicated tenant already provisioned/);
-  const { accessToken } = await start(
+  const { token: accessToken } = await admin(
     login(c.tenant, "admin-c@example.invalid", password),
   );
   assert.equal(
