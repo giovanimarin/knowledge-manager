@@ -113,20 +113,20 @@ function pdf(bytes: Buffer): Promise<string> {
 }
 
 const imageTypes = new Set(["png", "jpeg", "jpg", "webp", "gif"]);
-function ocr(bytes: Buffer): Promise<string> {
+function nativeExtract(bytes: Buffer, format: string): Promise<Buffer> {
   const socketPath = process.env.KM_INGEST_OCR_SOCKET;
   if (!socketPath) throw new Error("OCR endpoint unavailable");
   return new Promise((resolve, reject) => {
     const req = request(
       {
         socketPath,
-        path: "/ocr",
+        path: "/" + format,
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
           "Content-Length": bytes.length,
         },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(24000),
       },
       (response) => {
         if (response.statusCode !== 200) {
@@ -138,28 +138,12 @@ function ocr(bytes: Buffer): Promise<string> {
         let size = 0;
         response.on("data", (chunk: Buffer) => {
           size += chunk.length;
-          if (size > 1024 * 1024)
+          if (size > 8 * 1024 * 1024)
             response.destroy(new Error("OCR response exceeds bounds"));
           else parts.push(chunk);
         });
         response.on("error", reject);
-        response.on("end", () => {
-          try {
-            const data: unknown = JSON.parse(
-              Buffer.concat(parts).toString("utf8"),
-            );
-            if (
-              !data ||
-              typeof data !== "object" ||
-              !("text" in data) ||
-              typeof data.text !== "string"
-            )
-              throw new Error("Invalid OCR response");
-            resolve(data.text);
-          } catch (error) {
-            reject(error);
-          }
-        });
+        response.on("end", () => resolve(Buffer.concat(parts)));
       },
     );
     req.on("error", reject);
@@ -167,14 +151,27 @@ function ocr(bytes: Buffer): Promise<string> {
   });
 }
 
+const legacyOffice = new Map([
+  ["doc", "docx"],
+  ["xls", "xlsx"],
+  ["ppt", "pptx"],
+]);
+async function ocrText(bytes: Buffer, format: "ocr" | "pdf") {
+  const value = JSON.parse(
+    (await nativeExtract(bytes, format)).toString("utf8"),
+  ) as { text?: unknown };
+  if (typeof value.text !== "string") throw new Error("Invalid OCR response");
+  return value.text;
+}
 export async function extract(
   file: Attachment,
   tenant: string,
 ): Promise<Block | null> {
-  const ext = file.filename.split(".").at(-1)?.toLowerCase();
+  let ext = file.filename.split(".").at(-1)?.toLowerCase();
   if (
     !ext ||
     (!imageTypes.has(ext) &&
+      !legacyOffice.has(ext) &&
       !["txt", "md", "csv", "pdf", "docx", "xlsx", "pptx"].includes(ext))
   )
     return null;
@@ -189,10 +186,16 @@ export async function extract(
   )
     throw new Error("Attachment integrity mismatch");
   let text: string;
-  if (ext === "pdf") text = await pdf(bytes);
-  else if (imageTypes.has(ext)) text = await ocr(bytes);
-  else if (["docx", "xlsx", "pptx"].includes(ext)) {
-    const entries = officeFiles(bytes);
+  if (ext === "pdf") {
+    text = await pdf(bytes);
+    if (!text.trim()) text = await ocrText(bytes, "pdf");
+  } else if (imageTypes.has(ext)) text = await ocrText(bytes, "ocr");
+  else if (["docx", "xlsx", "pptx"].includes(ext) || legacyOffice.has(ext)) {
+    const modern = legacyOffice.get(ext);
+    const entries = officeFiles(
+      modern ? await nativeExtract(bytes, ext) : bytes,
+    );
+    ext = modern ?? ext;
     if (ext === "docx") {
       if (!entries["word/document.xml"])
         throw new Error("Missing document body");

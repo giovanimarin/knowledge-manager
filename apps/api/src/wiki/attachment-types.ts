@@ -1,4 +1,7 @@
 const formats = new Map([
+  ["doc", "application/msword"],
+  ["xls", "application/vnd.ms-excel"],
+  ["ppt", "application/vnd.ms-powerpoint"],
   ["pdf", "application/pdf"],
   [
     "docx",

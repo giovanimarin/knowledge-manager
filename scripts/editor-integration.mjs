@@ -402,13 +402,38 @@ try {
     ).toString("base64"),
   });
   assert.equal(scanImage.scanState, "clean");
+  const scannedPdf = await request("POST", assetPath, {
+    filename: "ocr.pdf",
+    contentType: "application/pdf",
+    data: readFileSync(
+      new URL("../contracts/fixtures/ingestion/ocr-pt-en.pdf", import.meta.url),
+    ).toString("base64"),
+  });
+  assert.equal(scannedPdf.scanState, "clean");
+  const legacyFiles = [];
+  for (const [extension, contentType, phrase] of [
+    ["doc", "application/msword", "Documento legado seguro"],
+    ["xls", "application/vnd.ms-excel", "Planilha legada segura"],
+    ["ppt", "application/vnd.ms-powerpoint", "Apresentação legada segura"],
+  ]) {
+    const filename = "legacy." + extension;
+    const file = await request("POST", assetPath, {
+      filename,
+      contentType,
+      data: readFileSync(
+        process.env.KM_INGEST_NATIVE_FIXTURES + "/" + filename,
+      ).toString("base64"),
+    });
+    assert.equal(file.scanState, "clean");
+    legacyFiles.push({ id: file.id, phrase });
+  }
   const ingestionStarted = performance.now();
   const published = await request("POST", route + "/publication", {
     revision: review.revision,
     expectedRevision: restored.revision,
   });
   async function untilIngest(condition, label) {
-    const end = performance.now() + 12000;
+    const end = performance.now() + 45000;
     while (performance.now() < end) {
       const value = await condition();
       if (value) return value;
@@ -473,6 +498,18 @@ try {
   const recognized = chunks.find((row) => row.block_id === scanImage.id);
   assert.match(recognized?.content ?? "", /ACESSO SEGURO/);
   assert.match(recognized?.content ?? "", /SECURE ACCESS/);
+  assert.match(
+    chunks.find((row) => row.block_id === scannedPdf.id)?.content ?? "",
+    /ACESSO SEGURO/,
+  );
+  for (const file of legacyFiles) {
+    assert.ok(
+      chunks.some(
+        (row) => row.block_id === file.id && row.content.includes(file.phrase),
+      ),
+      file.phrase,
+    );
+  }
   const later = await request("POST", assetPath, {
     filename: "later.txt",
     contentType: "text/plain",
@@ -544,6 +581,8 @@ try {
       "tenant-denial",
       "attachment-integrity",
       "ocr",
+      "scanned-pdf",
+      "legacy-office",
       "deduplication",
       "withdrawal",
       "source-cursor",

@@ -49,6 +49,22 @@ for _ in {1..40}; do
 done
 [[ -S "$KM_OCR_DIR/ocr.sock" ]]
 [[ "$(stat -c %a "$KM_OCR_DIR/ocr.sock")" == 666 ]]
+export KM_INGEST_NATIVE_FIXTURES="$scratch/legacy"
+mkdir "$KM_INGEST_NATIVE_FIXTURES"
+for pair in doc:odt xls:ods ppt:odp; do
+  legacy="${pair%:*}"
+  open_format="${pair#*:}"
+  libreoffice "-env:UserInstallation=file://$scratch/office-fixtures" --headless \
+    --convert-to "$legacy" --outdir "$KM_INGEST_NATIVE_FIXTURES" \
+    "contracts/fixtures/ingestion/legacy.$open_format"
+  [[ -s "$KM_INGEST_NATIVE_FIXTURES/legacy.$legacy" ]]
+  code="$(printf 'invalid legacy Office' | curl --unix-socket "$KM_OCR_DIR/ocr.sock" \
+    -sS -o /dev/null -w '%{http_code}' --data-binary @- "http://localhost/$legacy")"
+  [[ "$code" == 503 ]]
+done
+code="$(printf '%%PDF-invalid' | curl --unix-socket "$KM_OCR_DIR/ocr.sock" \
+  -sS -o /dev/null -w '%{http_code}' --data-binary @- http://localhost/pdf)"
+[[ "$code" == 503 ]]
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
