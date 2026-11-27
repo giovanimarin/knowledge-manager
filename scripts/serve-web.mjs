@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, request as forward } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -70,6 +70,15 @@ const server = createServer(async (request, response) => {
     return;
   }
   const path = request.url?.split("?", 1)[0];
+  if (
+    path === "/licenses/khroma-MIT.txt" ||
+    path === "/licenses/DOMPurify-Apache-2.0.txt"
+  ) {
+    response
+      .writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
+      .end(await readFile(join(distribution, path)));
+    return;
+  }
   if (path === "/") {
     response
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
@@ -105,7 +114,9 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
-  const asset = /^\/assets\/([A-Za-z0-9_-]+\.(js|css))$/.exec(path ?? "");
+  const asset = /^\/assets\/([A-Za-z0-9][A-Za-z0-9_.-]*\.(js|css))$/.exec(
+    path ?? "",
+  );
   if (asset) {
     try {
       const value = await readFile(join(distribution, "assets", asset[1]));
@@ -126,5 +137,60 @@ const server = createServer(async (request, response) => {
   response.writeHead(404).end();
 });
 
+server.on("upgrade", (request, client, head) => {
+  if (!/^\/v1\/collaboration\/[a-f0-9-]{36}$/i.test(request.url ?? "")) {
+    client.destroy();
+    return;
+  }
+  if (request.headers.origin) {
+    try {
+      if (new URL(request.headers.origin).host !== request.headers.host) {
+        client.destroy();
+        return;
+      }
+    } catch {
+      client.destroy();
+      return;
+    }
+  }
+  const upstream = forward({
+    host: "api",
+    port: 3000,
+    path: request.url,
+    headers: {
+      host: "api:3000",
+      connection: "Upgrade",
+      upgrade: "websocket",
+      "sec-websocket-key": request.headers["sec-websocket-key"] ?? "",
+      "sec-websocket-version": "13",
+    },
+  });
+  upstream.setTimeout(4000, () => upstream.destroy());
+  upstream.on("error", () => client.destroy());
+  upstream.on("response", (response) => {
+    response.resume();
+    client.destroy();
+  });
+  client.on("error", () => upstream.destroy());
+  upstream.on("upgrade", (response, socket, rest) => {
+    socket.setTimeout(0);
+    socket.on("error", () => client.destroy());
+    client.on("close", () => socket.destroy());
+    socket.on("close", () => client.destroy());
+    client.write(
+      "HTTP/1.1 101 Switching Protocols\r\n" +
+        response.rawHeaders.reduce(
+          (headers, value, index) =>
+            headers + (index % 2 ? value + "\r\n" : value + ": "),
+          "",
+        ) +
+        "\r\n",
+    );
+    if (head.length) socket.write(head);
+    if (rest.length) client.write(rest);
+    client.pipe(socket).pipe(client);
+  });
+  upstream.end();
+});
 server.listen(8080, "0.0.0.0");
 process.once("SIGTERM", () => server.close());

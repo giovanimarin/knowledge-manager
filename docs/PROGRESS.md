@@ -181,3 +181,31 @@ Rodadas intermediárias expuseram problemas de licença transitiva, advisories e
 - Pacotes aceitos **3/18 (16,7%)**. Isso não é medida de esforço completo do produto nem prontidão comercial.
 - Limites dos gates posteriores mantidos: integração autenticada real com Confluence/Notion (sandbox/G4), OCR e indexação avançada PKG-05, reconciliação autoritativa de tombstones entre backups PKG-14. A assinatura sintética ClamAV usada no CI não comprova eficácia operacional da base de assinaturas de produção.
 - **Próximo PKG-04:** editor rico/blocos e colaboração CRDT/WS real-time, versões/diffs, fluxos de revisão/publicação, ACL/revogação. Planejar marcos, pesos, subtarefas e contratos verificáveis antes de implementar. Regressões PKG-01 a 03 e gates G1/G3 obrigatórios. Escopo total aprovado preservado, sem contratação de serviços pagos.
+
+## PKG-04 — plano de execução
+
+Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o peso entre quatro subtarefas. Baseline 0/16 antes do código.
+
+| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
+| --- | --- | --- |
+| E1 Editor e blocos · 25% | 30–48 h | E1.1 validar tipos/IDs de blocos e round-trip; E1.2 formatação, listas/checklists e tabelas; E1.3 links, imagens, Mermaid, código e callouts seguros; E1.4 atalhos Markdown/slash, autosave e UI acessível. |
+| E2 Sessão e persistência · 35% | 42–67 h | E2.1 WebSocket autenticado com sync/update/ACK durável; E2.2 CRDT converge com clientes concorrentes, reconexão e reinício; E2.3 presença/cursores efêmeros; E2.4 negar revogação ativa e acessos shared/dedicated antes de leitura ou gravação. |
+| E3 Versões e publicação · 30% | 36–58 h | E3.1 histórico com autor/data, diff e retenção; E3.2 restauração como revisão nova; E3.3 revisão de snapshot, responsável, revisores e aprovação conforme política do espaço; E3.4 publicação imutável, validade, arquivamento e evento durável sem expor rascunho. |
+| E4 Evidência · 10% | 12–19 h | E4.1 contratos e negativos; E4.2 browser e WS multi-cliente; E4.3 regressões 01–03 e três checks; E4.4 relatório G1/G3 e runbook com limites comprovados. |
+
+[Contratos e fixtures do PKG-04](packages/PKG-04-contracts.md)
+
+### Implementação e evidências do PKG-04
+
+**Validação ponderada local e CI 100%, 16/16 subtarefas.** O PKG-04 segue para aceite técnico no PR #12. Pacotes formalmente aceitos: 3/18.
+
+| Marco | Subtarefas | Evidência |
+| --- | --- | --- |
+| E1 · 25% | E1.1–E1.4 verificadas | Fixtures de 10 tipos de bloco com IDs estáveis e negativos de tipo/URL. Chromium renderizou Mermaid, e duas sessões Playwright exerceram título, checklist, atalhos Markdown, sugestões slash, edição e autosave. `e6cae23`, `a50d409`, `013ee99`. |
+| E2 · 35% | E2.1–E2.4 verificadas | Dois usuários WebSocket convergiram em texto concorrente. PostgreSQL guarda snapshot, revisão e recibo antes do ACK. Presença/cursor, replay, reconexão, reinício real da API e revogação com sessão ativa exercitados. A/B shared e C dedicated tiveram negativas. `cdb6a4e`, `97daff3`. |
+| E3 · 30% | E3.1–E3.4 verificadas | Histórico, diff, restauração como revisão nova, retenção após 30 dias e preservação da revisão aprovada. Espaço restrito exigiu aprovação, outro ator não aprovou, snapshot publicado permaneceu imutável, e expiração retirada/aviso ficaram registrados no outbox. `cdb6a4e`, `9ceb67e`, `1fe5db5`. |
+| E4 · 10% | E4.1–E4.4 verificadas | Contrato JSON e fixtures, 17 testes locais sem omissões, seis cenários Playwright, regressões PKG-01/02/03 e três checks verdes no head de código. Relatório G3 e runbook publicados. |
+
+No commit `65270fc`, os seis cenários Playwright passaram em **7,1 s**. O smoke mediu **41 ms** para confirmar os dois updates, **43 ms** na reconexão, **7 ms** até a negação observada na tentativa após revogação e **3.607 ms** para reiniciar a API e recuperar o documento. Backup em **10 s** e restore em **15 s**. O `pnpm verify` local executou 17 testes em **5,29 s**. As latências são de um ensaio sintético. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310) · [Smoke, Playwright e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310/artifacts/15221459518)
+
+Rodadas anteriores detectaram importação dupla de Yjs no unitário, licenças transitivas no Mermaid 12 e uma regra de assets que rejeitava pontos em nomes de chunks. O teste usa o mesmo módulo ESM da API, a versão Mermaid 11 evita a dependência ELK e a regra de assets passou em 64 chunks e na renderização real. [Protocolo e fixtures](packages/PKG-04-contracts.md) · [Runbook](packages/PKG-04-runbook.md)

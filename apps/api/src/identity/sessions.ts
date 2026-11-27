@@ -229,6 +229,7 @@ export class Sessions {
       tenant: string,
       actor: Actor,
     ) => Promise<T>,
+    touch = true,
   ) {
     const match =
       typeof authorization === "string" &&
@@ -274,9 +275,10 @@ export class Sessions {
         for update of m,s`.execute(tx)
       ).rows[0];
       if (!principal) throw denied();
-      await sql`update km.session_families set last_seen=now() where tenant_id=${t.tenant} and id=${principal.session_id}`.execute(
-        tx,
-      );
+      if (touch)
+        await sql`update km.session_families set last_seen=now() where tenant_id=${t.tenant} and id=${principal.session_id}`.execute(
+          tx,
+        );
       return operation(tx, t.tenant, { kind: "member", member: principal });
     });
   }

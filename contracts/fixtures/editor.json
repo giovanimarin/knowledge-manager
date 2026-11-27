@@ -1,0 +1,26 @@
+{
+  "blocks": [
+    { "kind": "heading", "text": "Operações" },
+    { "kind": "text", "text": "Texto em português" },
+    { "kind": "list", "text": "Um\nDois" },
+    { "kind": "checklist", "text": "Conferir", "checked": true },
+    { "kind": "table", "text": "Área | Responsável\nOperações | Ana" },
+    { "kind": "code", "text": "const total = 2;" },
+    {
+      "kind": "image",
+      "text": "Diagrama",
+      "url": "https://example.invalid/diagram.png"
+    },
+    {
+      "kind": "link",
+      "text": "Roteiro",
+      "url": "https://example.invalid/runbook"
+    },
+    { "kind": "mermaid", "text": "flowchart LR\nA --> B" },
+    { "kind": "callout", "text": "Mantenha a trilha de auditoria." }
+  ],
+  "negative": [
+    { "kind": "iframe", "text": "x" },
+    { "kind": "link", "text": "x", "url": "javascript:alert(1)" }
+  ]
+}

@@ -26,6 +26,13 @@ const unknown = Object.entries(licenses)
       !(
         license === "(MIT AND Zlib)" &&
         packages.every(({ name }) => name === "pako")
+      ) &&
+      !(
+        license === "(MPL-2.0 OR Apache-2.0)" &&
+        packages.every(({ name }) => name === "dompurify")
+      ) &&
+      !(
+        license === "Unknown" && packages.every(({ name }) => name === "khroma")
       ),
   )
   .map(([license]) => license);

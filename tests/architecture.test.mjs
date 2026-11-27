@@ -19,10 +19,12 @@ const layers = {
     "sanitize-html",
     "saxes",
     "unpdf",
+    "ws",
+    "yjs",
     "reflect-metadata",
   ]),
   "apps/worker": entrypoints,
-  "apps/web": new Set(["react", "react-dom/client"]),
+  "apps/web": new Set(["react", "react-dom/client", "yjs", "mermaid"]),
   "packages/foundation": new Set([
     "@opentelemetry/api",
     "@opentelemetry/exporter-trace-otlp-http",

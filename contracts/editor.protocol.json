@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "path": "/v1/collaboration/{pageId}",
+  "transport": "json-text",
+  "clientFrames": {
+    "auth": ["type", "token"],
+    "update": ["type", "operationId", "generation", "update"],
+    "cursor": ["type", "blockId", "offset"]
+  },
+  "serverFrames": {
+    "sync": ["type", "snapshot", "sequence", "generation", "write", "epoch"],
+    "ack": ["type", "operationId", "sequence"],
+    "presence": ["type", "participants"],
+    "error": ["type", "status"]
+  },
+  "close": { "invalidSession": 4401, "hiddenOrRevokedPage": 4403 }
+}

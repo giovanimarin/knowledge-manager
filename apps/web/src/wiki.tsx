@@ -1,3 +1,4 @@
+import { CollaborativeEditor } from "./collaborative-editor";
 import { WikiTransfer } from "./wiki-transfer";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -39,6 +40,21 @@ type Relation = {
   source_id: string;
   target_id: string;
 };
+
+function CollaborationPanel(props: {
+  pageId: string;
+  spaceId: string | null;
+  token: string;
+}) {
+  const [opened, setOpened] = useState(false);
+  return opened ? (
+    <CollaborativeEditor {...props} />
+  ) : (
+    <button type="button" onClick={() => setOpened(true)}>
+      Conectar ao editor
+    </button>
+  );
+}
 
 export function Wiki({ token }: { token: string }) {
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -376,6 +392,14 @@ export function Wiki({ token }: { token: string }) {
           >
             Mover documento para a lixeira
           </button>
+          <details>
+            <summary>Abrir editor colaborativo</summary>
+            <CollaborationPanel
+              pageId={current.id}
+              spaceId={current.space_id}
+              token={token}
+            />
+          </details>
           <h4>Comentários</h4>
           <ul>
             {comments.map((comment) => (

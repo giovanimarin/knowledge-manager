@@ -1,3 +1,4 @@
+import { installCollaboration } from "./editor/socket.js";
 import "reflect-metadata";
 import { IdentityController } from "./identity/controller.js";
 import { Sessions } from "./identity/sessions.js";
@@ -48,9 +49,15 @@ async function main() {
   );
   api.useBodyParser("json", { limit: "12mb" });
   await api.listen(3000, "0.0.0.0");
+  const closeSockets = installCollaboration(
+    api.getHttpServer(),
+    api.get(Sessions),
+    dependencies,
+  );
   console.log(JSON.stringify({ service: "api", event: "listening" }));
 
   const shutdown = async () => {
+    closeSockets();
     await api.close();
     await dependencies.close();
     await telemetry?.shutdown();
