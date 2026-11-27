@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parse } from "csv-parse/sync";
 import { sql, type TenantTransaction } from "@km/foundation";
 import { action, assess, requirePermission, type Action } from "./policy.js";
 import { audit, changeEpoch, type Actor } from "./sessions.js";
@@ -7,6 +8,7 @@ import {
   email,
   hashPassword,
   id,
+  input,
   IdentityError,
   parseToken,
   password,
@@ -57,6 +59,35 @@ export class Management {
     );
     await audit(tx, tenant, current.id, "identity.invited");
     return { proof, expiresIn: 86400 };
+  }
+
+  async bulkInvite(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    let entries: unknown = body.members;
+    if (body.csv !== undefined) {
+      const csv = string(body.csv, 50_000);
+      try {
+        entries = parse(csv, {
+          columns: true,
+          bom: true,
+          skip_empty_lines: true,
+          trim: true,
+          max_record_size: 1000,
+        });
+      } catch {
+        throw new IdentityError(400);
+      }
+    }
+    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 50)
+      throw new IdentityError(400);
+    const result = [];
+    for (const value of entries)
+      result.push(await this.invite(tx, tenant, actor, input(value)));
+    return result;
   }
 
   async accept(data: Record<string, unknown>) {
@@ -166,6 +197,129 @@ export class Management {
     return { proof, expiresIn: 900 };
   }
 
+  private async canDelegate(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    operation: Action,
+    resource: string | null,
+  ) {
+    if (
+      !(await assess(tx, tenant, actor, {
+        action: operation,
+        resource,
+        channel: "web",
+        purpose: "default",
+        external: false,
+      }))
+    )
+      return false;
+    const member = actor.kind === "member" ? actor.member : null;
+    if (!member) return false;
+    const eligibility = (
+      await sql<{ allowed: boolean }>`
+      with recursive lineage(id,parent_id) as (
+        select id,parent_id from km.identity_resources where tenant_id=${tenant} and id=${resource}
+        union select r.id,r.parent_id from km.identity_resources r join lineage l on l.parent_id=r.id
+          where r.tenant_id=${tenant}
+      ), groups(id) as (
+        select group_id from km.identity_group_members where tenant_id=${tenant} and member_id=${member.id}
+        union select e.parent_id from km.identity_group_edges e join groups g on e.child_id=g.id where e.tenant_id=${tenant}
+      )
+      select (
+        (${member.admin} and ${operation} like 'identity.%' and ${resource}::uuid is null)
+        or exists (
+          select from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
+          where g.tenant_id=${tenant} and g.member_id=${member.id} and g.effect='allow'
+          and ${operation}=any(r.actions) and (g.resource_id is null or g.resource_id in (select id from lineage))
+          and g.valid_from<=now() and g.valid_until is null and g.purpose is null and g.channel is null and not g.require_step_up
+        )
+      ) and not exists (
+        select from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
+        where g.tenant_id=${tenant} and (g.member_id=${member.id} or g.group_id in(select id from groups))
+        and g.effect='deny' and ${operation}=any(r.actions)
+        and (g.resource_id is null or g.resource_id in (select id from lineage))
+        and (g.valid_until is null or g.valid_until>now())
+      ) as allowed
+    `.execute(tx)
+    ).rows[0];
+    return eligibility?.allowed === true;
+  }
+
+  private async verifyGroupGrants(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    groupId: string,
+  ) {
+    const ceilings = (
+      await sql<{ resource_id: string | null; operation: Action }>`
+      with recursive ancestors(id) as (
+        select id from km.identity_groups where tenant_id=${tenant} and id=${groupId}
+        union select e.parent_id from km.identity_group_edges e join ancestors a on a.id=e.child_id where e.tenant_id=${tenant}
+      ) select distinct g.resource_id,unnest(r.actions) operation
+      from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
+      where g.tenant_id=${tenant} and g.group_id in(select id from ancestors)
+        and (g.valid_until is null or g.valid_until>now())
+    `.execute(tx)
+    ).rows;
+    for (const grant of ceilings) {
+      if (
+        !(await this.canDelegate(
+          tx,
+          tenant,
+          actor,
+          grant.operation,
+          grant.resource_id,
+        ))
+      )
+        throw new IdentityError(403);
+    }
+  }
+
+  async replaceGroupMemberships(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    groupId: string,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.policy.manage",
+      true,
+    );
+    await changeEpoch(tx, tenant);
+    await this.verifyGroupGrants(tx, tenant, actor, groupId);
+    const group = (
+      await sql`select id from km.identity_groups where tenant_id=${tenant} and id=${groupId}`.execute(
+        tx,
+      )
+    ).rows[0];
+    if (!group) throw new IdentityError(404);
+    if (!Array.isArray(body.members) || body.members.length > 100)
+      throw new IdentityError(400);
+    await sql`delete from km.identity_group_members where tenant_id=${tenant} and group_id=${groupId}`.execute(
+      tx,
+    );
+    for (const memberId of new Set(body.members.map(id))) {
+      await sql`insert into km.identity_group_members values(${tenant},${groupId},${memberId})`.execute(
+        tx,
+      );
+    }
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      "identity.group-members-updated",
+      "success",
+      groupId,
+    );
+    return { id: groupId };
+  }
+
   async group(
     tx: TenantTransaction,
     tenant: string,
@@ -185,13 +339,16 @@ export class Management {
     const members = body.members === undefined ? [] : body.members;
     if (!Array.isArray(members) || members.length > 100)
       throw new IdentityError(400);
-    await sql`insert into km.identity_groups values (${tenant},${groupId},${name})`.execute(
+    await sql`insert into km.identity_groups values (${tenant},${groupId},${name},${body.requireMfa === true})`.execute(
       tx,
     );
-    if (parent)
+    await changeEpoch(tx, tenant);
+    if (parent) {
+      await this.verifyGroupGrants(tx, tenant, actor, parent);
       await sql`insert into km.identity_group_edges values (${tenant},${parent},${groupId})`.execute(
         tx,
       );
+    }
     for (const memberId of new Set(members.map(id))) {
       await sql`insert into km.identity_group_members values (${tenant},${groupId},${memberId})`.execute(
         tx,
@@ -231,7 +388,7 @@ export class Management {
     )
       throw new IdentityError(400);
     const operations = [...new Set(body.actions.map(action))];
-    await sql`insert into km.identity_roles values (${tenant},${id},${name},${operations}::text[])`.execute(
+    await sql`insert into km.identity_roles values (${tenant},${id},${name},${operations}::text[],${body.requireMfa === true})`.execute(
       tx,
     );
     await audit(tx, tenant, current.id, "identity.role-created", "success", id);
@@ -251,6 +408,7 @@ export class Management {
       "identity.policy.manage",
       true,
     );
+    await changeEpoch(tx, tenant);
     const grantId = randomUUID();
     const role = id(body.roleId);
     const member = optionalId(body.memberId),
@@ -271,17 +429,8 @@ export class Management {
     ).rows[0]?.actions;
     if (!operations) throw new IdentityError(404);
     if (body.effect === "allow") {
-      // Tenant administration is independent from permission to delegate content.
       for (const operation of operations) {
-        if (
-          !(await assess(tx, tenant, actor, {
-            action: operation,
-            resource,
-            channel: "web",
-            purpose: "default",
-            external: false,
-          }))
-        )
+        if (!(await this.canDelegate(tx, tenant, actor, operation, resource)))
           throw new IdentityError(403);
       }
     }

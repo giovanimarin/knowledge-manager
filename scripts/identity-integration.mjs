@@ -144,6 +144,28 @@ async function primary() {
       begin delete from km.identity_audit; raise exception 'audit delete succeeded';
       exception when insufficient_privilege then null; end;
     end $$; commit;`);
+  const importResult = await request("POST", "/members/invitations", {
+    token: adminA,
+    body: { csv: 'email,name\nextra@example.invalid,"Pessoa, Extra"' },
+  });
+  assert.equal(importResult.length, 1);
+  await request("POST", "/members/invitations", {
+    token: adminA,
+    body: { csv: "email,name\ninvalid" },
+    status: 400,
+  });
+  await request("POST", "/privacy-requests", {
+    token: adminA,
+    body: { kind: "export" },
+  });
+  assert.equal(
+    (await request("GET", "/privacy-requests", { token: adminA })).length,
+    1,
+  );
+  assert.equal(
+    (await request("GET", "/privacy-requests", { token: adminB })).length,
+    0,
+  );
   const invited = await request("POST", "/members", {
     token: adminA,
     body: { email: "member@example.invalid", name: "Membro A" },
@@ -156,6 +178,27 @@ async function primary() {
     status: 401,
   });
   const account = login(a.tenant, "member@example.invalid", password);
+  const groupMfa = await request("POST", "/groups", {
+    token: adminA,
+    body: { name: "MFA obrigatório", requireMfa: true, members: [person.id] },
+  });
+  const limited = await start(account);
+  assert.equal(
+    (await request("GET", "/me", { token: limited.accessToken })).mfaRequired,
+    true,
+  );
+  await request("GET", "/sessions", {
+    token: limited.accessToken,
+    status: 403,
+  });
+  await request("PATCH", `/groups/${groupMfa.id}/members`, {
+    token: adminA,
+    body: { members: [] },
+  });
+  assert.equal(
+    (await request("GET", "/me", { token: limited.accessToken })).mfaRequired,
+    false,
+  );
   const old = await start(account);
   const rotated = await request("POST", "/sessions/refresh", {
     body: { refreshToken: old.refreshToken },
@@ -348,7 +391,27 @@ async function dedicated() {
   );
 }
 
-if (mode === "primary") await primary();
+if (mode === "quota") {
+  const data = JSON.parse(readFileSync(file, "utf8"));
+  const results = await Promise.all(
+    Array.from({ length: 12 }, async () => {
+      const response = await fetch(new URL("/v1/sessions", base), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgHint: data.tenant,
+          email: "limited@example.invalid",
+          password: "bad-login-fixture",
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      return response.status;
+    }),
+  );
+  assert.equal(results.filter((status) => status === 401).length, 10);
+  assert.equal(results.filter((status) => status === 429).length, 2);
+  console.log("Quota compartilhada verificada com 12 tentativas concorrentes");
+} else if (mode === "primary") await primary();
 else if (mode === "dedicated") await dedicated();
 else if (mode === "restored") {
   const data = JSON.parse(readFileSync(file, "utf8"));

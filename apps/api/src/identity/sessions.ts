@@ -46,7 +46,7 @@ async function member(
     field === "email" ? sql`m.email = ${value}` : sql`m.id = ${value}`;
   return (
     await sql<Member>`
-    select m.*, o.require_mfa from km.memberships m
+    select m.*, (o.require_mfa or km.member_requires_mfa(m.tenant_id,m.id)) require_mfa from km.memberships m
     join km.organizations o using (tenant_id)
     where m.tenant_id = ${tenant} and ${predicate}
       and m.state='active' and o.state='active'
@@ -148,6 +148,9 @@ export class Sessions {
 
   async limit(tenant: string, bucket: string, count = 10) {
     const result = await this.dependencies.inTenant(tenant, async (tx) => {
+      await sql`delete from km.identity_limits where tenant_id=${tenant} and expires_at < now()-interval '10 minutes'`.execute(
+        tx,
+      );
       return (
         await sql<{
           count: number;
@@ -233,26 +236,35 @@ export class Sessions {
     if (!match) throw denied();
     const t = parseToken(match[1], ["a", "s", "k"]);
     if (t.kind !== "a") {
-      await this.limit(t.tenant, `service:${t.digest}`, 120);
-      return this.dependencies.inTenant(t.tenant, async (tx) => {
-        const condition =
-          t.kind === "k"
-            ? sql`c.secret_digest=${t.digest}`
-            : sql`exists (
+      const condition =
+        t.kind === "k"
+          ? sql`c.secret_digest=${t.digest}`
+          : sql`exists (
           select from km.service_tokens t where t.tenant_id=c.tenant_id and t.client_id=c.id
           and t.digest=${t.digest} and t.expires_at>now())`;
-        const service = (
+      const resolve = async (tx: TenantTransaction) =>
+        (
           await sql<Service>`select c.id,c.name from km.service_clients c join km.organizations o using (tenant_id)
           where c.tenant_id=${t.tenant} and ${condition} and c.expires_at>now() and c.revoked_at is null
           and o.state='active' for share of c,o`.execute(tx)
         ).rows[0];
-        if (!service) throw denied();
-        return operation(tx, t.tenant, { kind: "service", service });
+      const initial = await this.dependencies.inTenant(t.tenant, resolve);
+      if (!initial) throw denied();
+      await this.limit(t.tenant, `service:${initial.id}`, 120);
+      return this.dependencies.inTenant(t.tenant, async (tx) => {
+        const service = await resolve(tx);
+        if (!service || service.id !== initial.id) throw denied();
+        const result = await operation(tx, t.tenant, {
+          kind: "service",
+          service,
+        });
+        await audit(tx, t.tenant, service.id, "identity.service-request");
+        return result;
       });
     }
     return this.dependencies.inTenant(t.tenant, async (tx) => {
       const principal = (
-        await sql<Identity>`select m.*,o.require_mfa,s.id as session_id,
+        await sql<Identity>`select m.*,(o.require_mfa or km.member_requires_mfa(m.tenant_id,m.id)) require_mfa,s.id as session_id,
           coalesce(s.step_until>now(),false) as stepped_up
         from km.session_families s join km.memberships m on (m.tenant_id,m.id)=(s.tenant_id,s.member_id)
         join km.organizations o on o.tenant_id=s.tenant_id

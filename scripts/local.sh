@@ -79,6 +79,17 @@ BEGIN;
 INSERT INTO km.organizations (tenant_id,name) VALUES (:'organization',:'name');
 INSERT INTO km.memberships (tenant_id,id,email,name,password_hash,admin)
 VALUES (:'organization',:'member',lower(:'email'),:'display',:'encoded',true);
+INSERT INTO km.identity_roles (tenant_id,id,name,actions,require_mfa)
+SELECT :'organization',gen_random_uuid(),name,actions,require_mfa FROM (VALUES
+  ('Leitor',ARRAY['content.read','knowledge.query'],false),
+  ('Comentarista',ARRAY['content.read','knowledge.query','content.comment'],false),
+  ('Editor',ARRAY['content.read','knowledge.query','content.comment','content.edit','content.publish'],false),
+  ('Aprovador',ARRAY['content.read','content.comment','content.approve'],true),
+  ('Administrador de espaço',ARRAY['content.acl.manage'],true),
+  ('Gestor de conhecimento',ARRAY['knowledge.govern'],true),
+  ('Financeiro',ARRAY['billing.read'],true),
+  ('Auditor',ARRAY['identity.audit.read'],true)
+) AS preset(name,actions,require_mfa);
 INSERT INTO km.identity_audit (tenant_id,actor_id,action,resource_id,outcome)
 VALUES (:'organization',:'member','identity.organization-provisioned',:'organization','success');
 COMMIT;

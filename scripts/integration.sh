@@ -48,6 +48,7 @@ for index in 1 2; do
   compose exec -T --index "$index" worker node -e 'fetch("http://127.0.0.1:3001/readyz").then(r=>{if(!r.ok) process.exit(1)})'
 done
 make smoke
+node scripts/identity-integration.mjs quota "$scratch/identity"
 echo "Escala local: duas réplicas API e worker saudáveis com fila e PostgreSQL compartilhados"
 compose up -d --wait --no-build --scale api=1 --scale worker=1
 pnpm test:e2e

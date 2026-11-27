@@ -83,6 +83,17 @@ export class IdentityController {
       req.method === "POST" || req.method === "PATCH" ? input(raw) : {};
     const address = req.socket.remoteAddress ?? "unknown";
     const auth = req.headers.authorization;
+    const publicProof = {
+      "POST /v1/sessions/refresh": ["r", body.refreshToken],
+      "POST /v1/mfa/challenge": ["m", body.challenge],
+      "POST /v1/invitations/accept": ["i", body.proof],
+      "POST /v1/recovery/complete": ["p", body.proof],
+    }[key];
+    if (publicProof) {
+      const [kind, proof] = publicProof;
+      const parsed = parseToken(proof, [kind as string]);
+      await this.sessions.limit(parsed.tenant, `proof-ip:${address}`, 60);
+    }
     switch (key) {
       case "POST /v1/sessions":
         return this.sessions.login(body, address);
@@ -184,6 +195,70 @@ export class IdentityController {
           );
           return { id: m.id, name, language };
         }
+        case "GET /v1/organization/security": {
+          await requirePermission(tx, tenant, actor, "identity.policy.manage");
+          return (
+            await sql`select session_limit, require_mfa, policy_epoch from km.organizations where tenant_id=${tenant}`.execute(
+              tx,
+            )
+          ).rows[0];
+        }
+        case "PATCH /v1/organization/security": {
+          const m = await requirePermission(
+            tx,
+            tenant,
+            actor,
+            "identity.policy.manage",
+            true,
+          );
+          const { sessionLimit, requireMfa } = body;
+          if (
+            typeof sessionLimit !== "number" ||
+            !Number.isInteger(sessionLimit) ||
+            sessionLimit < 1 ||
+            sessionLimit > 50 ||
+            typeof requireMfa !== "boolean"
+          )
+            throw new IdentityError(400);
+          await sql`update km.organizations set session_limit=${sessionLimit},require_mfa=${requireMfa}
+            where tenant_id=${tenant}`.execute(tx);
+          await changeEpoch(tx, tenant);
+          await audit(
+            tx,
+            tenant,
+            m.id,
+            "identity.organization-security-updated",
+          );
+          return { sessionLimit, requireMfa };
+        }
+        case "GET /v1/privacy-requests": {
+          const m = localMember(actor);
+          return (
+            await sql`select id,kind,state,created_at from km.privacy_requests
+            where tenant_id=${tenant} and member_id=${m.id} order by created_at desc limit 100`.execute(
+              tx,
+            )
+          ).rows;
+        }
+        case "POST /v1/privacy-requests": {
+          const m = localMember(actor);
+          const kind = body.kind;
+          if (kind !== "export" && kind !== "delete")
+            throw new IdentityError(400);
+          if (!m.stepped_up) throw new IdentityError(403);
+          const requestId = randomUUID();
+          await sql`insert into km.privacy_requests (tenant_id,id,member_id,kind)
+            values (${tenant},${requestId},${m.id},${kind})`.execute(tx);
+          await audit(
+            tx,
+            tenant,
+            m.id,
+            "identity.privacy-requested",
+            "success",
+            requestId,
+          );
+          return { id: requestId, state: "requested" };
+        }
         case "GET /v1/members":
           await requirePermission(tx, tenant, actor, "identity.members.manage");
           return (
@@ -192,6 +267,8 @@ export class IdentityController {
           ).rows;
         case "POST /v1/members":
           return this.management.invite(tx, tenant, actor, body);
+        case "POST /v1/members/invitations":
+          return this.management.bulkInvite(tx, tenant, actor, body);
         case "POST /v1/recovery":
           return this.management.issueRecovery(tx, tenant, actor, body);
         case "POST /v1/groups":
@@ -230,7 +307,7 @@ export class IdentityController {
             const principal = (
               await sql<
                 ReturnType<typeof localMember>
-              >`select m.*,o.require_mfa,s.id session_id,coalesce(s.step_until>now(),false) stepped_up
+              >`select m.*,(o.require_mfa or km.member_requires_mfa(m.tenant_id,m.id)) require_mfa,s.id session_id,coalesce(s.step_until>now(),false) stepped_up
               from km.session_families s join km.memberships m on (s.tenant_id,s.member_id)=(m.tenant_id,m.id)
               join km.organizations o on o.tenant_id=m.tenant_id where m.tenant_id=${tenant} and s.access_digest=${token.digest}
               and s.revoked_at is null and s.access_until>now() and s.expires_at>now() and s.last_seen>now()-interval '30 minutes'
@@ -285,6 +362,17 @@ export class IdentityController {
           ).rows;
         }
       }
+      const groupPath = pathname.match(
+        /^\/v1\/groups\/([a-f0-9-]+)\/members$/i,
+      );
+      if (req.method === "PATCH" && groupPath)
+        return this.management.replaceGroupMemberships(
+          tx,
+          tenant,
+          actor,
+          id(groupPath[1]),
+          body,
+        );
       const target = pathname.match(
         /^\/v1\/(members|service-clients|grants)\/([a-f0-9-]+)(\/rotate)?$/i,
       );
