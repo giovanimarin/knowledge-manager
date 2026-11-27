@@ -71,6 +71,14 @@ db(`insert into km.identity_roles(tenant_id,id,name,actions) values ('${tenant}'
 insert into km.identity_grants(tenant_id,id,role_id,member_id,effect) values ('${tenant}','${grant}','${role}','${adminMemberA}','allow')`);
 
 const space = await request("POST", "/spaces", fixtures.space);
+await request("PATCH", "/metadata-schemas/" + space.id, {
+  fields: { unit: "string" },
+});
+assert.equal(
+  (await request("GET", "/metadata-schemas/" + space.id)).fields.unit,
+  "string",
+);
+await request("PATCH", "/settings", { retentionDays: 45 });
 const other = await request("POST", "/spaces", { title: "Pesquisa" });
 const root = await request("POST", "/pages", {
   ...fixtures.page,
@@ -185,6 +193,14 @@ await request("DELETE", "/pages/" + child.id);
 assert.equal(
   (await request("GET", "/pages/" + root.id + "/relations"))[0].broken,
   true,
+);
+assert.ok((await request("GET", "/trash")).some((row) => row.id === child.id));
+await request(
+  "POST",
+  "/trash/" + child.id + "/purge",
+  { kind: "page", confirm: child.id },
+  adminA,
+  403,
 );
 await request("POST", "/pages/" + child.id + "/restore", {});
 await request("DELETE", "/spaces/" + space.id);

@@ -73,10 +73,14 @@ ALTER TABLE km.wiki_tombstones FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_scope ON km.wiki_tombstones USING
  (tenant_id = nullif(current_setting('km.tenant_id',true),'')::uuid);
 GRANT SELECT, INSERT ON km.wiki_tombstones TO km_app;
+CREATE TABLE km.wiki_settings (
+  tenant_id uuid PRIMARY KEY REFERENCES km.organizations,
+  retention_days integer NOT NULL CHECK (retention_days BETWEEN 1 AND 3650)
+);
 DO $$
 DECLARE relation text;
 BEGIN
-  FOREACH relation IN ARRAY ARRAY['wiki_spaces','wiki_pages','wiki_relations','wiki_comments','wiki_templates','wiki_attachments','wiki_transfer_jobs'] LOOP
+  FOREACH relation IN ARRAY ARRAY['wiki_spaces','wiki_pages','wiki_relations','wiki_comments','wiki_templates','wiki_attachments','wiki_transfer_jobs','wiki_settings'] LOOP
     EXECUTE format('ALTER TABLE km.%I ENABLE ROW LEVEL SECURITY', relation);
     EXECUTE format('ALTER TABLE km.%I FORCE ROW LEVEL SECURITY', relation);
     EXECUTE format('CREATE POLICY tenant_scope ON km.%I USING

@@ -153,6 +153,40 @@ export class Wiki {
     return index;
   }
 
+  private async validateMetadata(space: string, metadata: Body) {
+    const schema =
+      (
+        await sql<{
+          metadata_schema: Body;
+        }>`select metadata_schema from km.wiki_spaces where id=${space}`.execute(
+          this.tx,
+        )
+      ).rows[0]?.metadata_schema ?? {};
+    if (!Object.keys(schema).length) return;
+    for (const [field, value] of Object.entries(metadata)) {
+      if (
+        !(field in schema) ||
+        !Object.hasOwn(schema, field) ||
+        value === null ||
+        typeof value !== schema[field]
+      )
+        throw invalid();
+    }
+  }
+
+  private metadataSchema(value: unknown) {
+    const fields = input(value);
+    if (Object.keys(fields).length > 40) throw invalid();
+    for (const [name, kind] of Object.entries(fields)) {
+      if (
+        !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(name) ||
+        !["string", "boolean", "number"].includes(String(kind))
+      )
+        throw invalid();
+    }
+    return fields;
+  }
+
   private async createPage(body: Body) {
     const space = id(body.spaceId);
     const parent = optionalId(body.parentId);
@@ -172,6 +206,7 @@ export class Wiki {
       content = body.content === undefined ? template.content : content;
       metadata = { ...template.fields, ...metadata };
     }
+    await this.validateMetadata(space, metadata);
     const position = await this.insertionPosition(space, parent, body.position);
     await this.resource(key, parent ?? space, level);
     await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,tags,category,metadata,owner_id,author_id)
@@ -295,7 +330,7 @@ export class Wiki {
       await sql<{ deleted_batch: string | null }>`
       select deleted_batch from km.wiki_spaces where id=${key}
       and (${restore} = (deleted_batch is not null))
-      and (not ${restore} or deleted_at>now()-interval '30 days')
+      and (not ${restore} or deleted_at>now()-coalesce((select retention_days from km.wiki_settings),30)*interval '1 day')
     `.execute(this.tx)
     ).rows[0];
     if (!row) throw missing();
@@ -365,6 +400,44 @@ export class Wiki {
         if (await this.can("content.acl.manage", row.id)) visible.push(row);
       return visible;
     }
+    if (path === "/v1/wiki/settings" && method === "PATCH") {
+      await this.require("content.acl.manage", null);
+      const days = body.retentionDays;
+      if (
+        typeof days !== "number" ||
+        !Number.isInteger(days) ||
+        days < 1 ||
+        days > 3650
+      )
+        throw invalid();
+      await sql`insert into km.wiki_settings values(${this.tenant},${days})
+        on conflict(tenant_id) do update set retention_days=excluded.retention_days`.execute(
+        this.tx,
+      );
+      await this.event("settings.update", this.tenant);
+      return { retentionDays: days };
+    }
+    const schemaRoute = /^\/v1\/wiki\/metadata-schemas\/([^/]+)$/.exec(path);
+    if (schemaRoute) {
+      const space = id(schemaRoute[1]);
+      if (method === "GET") {
+        await this.space(space, "content.read");
+        return (
+          await sql`select metadata_schema as fields from km.wiki_spaces where id=${space}`.execute(
+            this.tx,
+          )
+        ).rows[0];
+      }
+      if (method === "PATCH") {
+        await this.space(space, "content.acl.manage");
+        const fields = this.metadataSchema(body.fields);
+        await sql`update km.wiki_spaces set metadata_schema=${JSON.stringify(fields)}::jsonb where id=${space}`.execute(
+          this.tx,
+        );
+        await this.event("metadata.update", space);
+        return { fields };
+      }
+    }
     const trashOperation = /^\/v1\/wiki\/trash\/([^/]+)\/(restore|purge)$/.exec(
       path,
     );
@@ -423,7 +496,7 @@ export class Wiki {
         const key = randomUUID();
         await this.resource(key, null, classification(body.classification));
         await sql`insert into km.wiki_spaces(tenant_id,id,title,metadata_schema) values
-          (${this.tenant},${key},${string(body.title)},${JSON.stringify(body.metadataSchema === undefined ? {} : input(body.metadataSchema))}::jsonb)`.execute(
+          (${this.tenant},${key},${string(body.title)},${JSON.stringify(body.metadataSchema === undefined ? {} : this.metadataSchema(body.metadataSchema))}::jsonb)`.execute(
           this.tx,
         );
         await this.event("space.create", key);
@@ -483,6 +556,8 @@ export class Wiki {
         );
         await changeEpoch(this.tx, this.tenant);
       }
+      if (body.metadata !== undefined)
+        await this.validateMetadata(page.space_id, input(body.metadata));
       await sql`update km.wiki_pages set title=${body.title === undefined ? page.title : string(body.title)},
         content=${body.content === undefined ? page.content : document(body.content)},
         tags=${body.tags === undefined ? page.tags : tags(body.tags)}::text[],
@@ -694,7 +769,9 @@ export class Wiki {
       await sql<{
         id: string;
       }>`select id from km.wiki_pages where deleted_batch=${key}
-      and deleted_at>now()-interval '30 days'`.execute(this.tx)
+      and deleted_at>now()-coalesce((select retention_days from km.wiki_settings),30)*interval '1 day'`.execute(
+        this.tx,
+      )
     ).rows;
     if (!batch.length) throw missing();
     for (const item of batch) await this.require("content.acl.manage", item.id);
@@ -872,6 +949,7 @@ export class Wiki {
       );
       const file = result.rows[0];
       if (!file) throw missing();
+      await this.event("attachment.download", key);
       return {
         filename: file.filename,
         contentType: file.content_type,
