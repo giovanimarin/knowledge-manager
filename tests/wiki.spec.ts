@@ -115,4 +115,17 @@ test("U4 imports a draft, exposes export losses and denies another space", async
   await expect(wiki.getByRole("alert")).toHaveText(
     "Operação indisponível para este acesso.",
   );
+  page.once("dialog", (dialog) => void dialog.accept());
+  await wiki
+    .getByRole("button", { name: "Mover documento para a lixeira" })
+    .click();
+  await expect(
+    wiki.getByRole("button", { name: "Guia-browser", exact: true }),
+  ).toHaveCount(0);
+  await wiki.getByRole("button", { name: "Abrir lixeira" }).click();
+  const trash = wiki.getByRole("region", { name: "Lixeira" });
+  await trash.getByRole("button", { name: "Restaurar", exact: true }).click();
+  await expect(
+    wiki.getByRole("button", { name: "Guia-browser", exact: true }),
+  ).toBeVisible();
 });

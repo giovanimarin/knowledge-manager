@@ -412,7 +412,7 @@ for (const format of ["word", "pdf", "zip"]) {
   assert.match(restored.content, /Access checklist/i);
   assert.equal(detail.items[0].state, "draft");
 }
-const { zipSync, strToU8 } = createRequire(
+const { zipSync, strToU8, unzipSync, strFromU8 } = createRequire(
   new URL("../apps/api/package.json", import.meta.url),
 )("fflate");
 const fidelity = JSON.parse(
@@ -467,6 +467,18 @@ const checklist = await request(
 );
 assert.equal(checklist[0].id, root.id);
 assert.match(checklist[0].snippet, /Access checklist/);
+const spacePackage = await request("POST", "/export-jobs", {
+  format: "zip",
+  spaceId: space.id,
+});
+const archiveOutput = await request("GET", "/export-jobs/" + spacePackage.id);
+const unpacked = unzipSync(Buffer.from(archiveOutput.files[0].data, "base64"));
+const zipManifest = JSON.parse(strFromU8(unpacked["knowledge-manager.json"]));
+assert.ok(zipManifest.length > 1);
+const packagedRoot = zipManifest.find(
+  (page) => page.title === fixtures.page.title,
+);
+assert.ok(packagedRoot.files.some((file) => file.filename === upload.filename));
 const deny = randomUUID();
 db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
  ('${tenant}','${deny}','${role}','${adminMemberA}','${root.id}','deny')`);
