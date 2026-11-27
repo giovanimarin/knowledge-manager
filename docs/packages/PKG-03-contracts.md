@@ -16,3 +16,7 @@ As chamadas autenticadas usam a sessão C1. Recursos inexistentes ou invisíveis
 Editor rico, colaboração e publicação seguem PKG-04; extração/conversão avançada e indexação seguem os gates do PKG-05; busca semântica no PKG-06; sugestões assistidas no PKG-13. As fronteiras constam na matriz normativa.
 
 As fixtures sintéticas ficam em [contracts/fixtures/wiki.json](../../contracts/fixtures/wiki.json).
+
+## Quarentena de anexos
+
+A homologação do adaptador usa um daemon ClamAV local. Configure `KM_CLAMD_SOCKET` com um socket Unix privado legível pelo processo de API e monte o socket no contêiner se usar Compose. Uma resposta ausente, erro ou veredito incompleto conserva o objeto em quarentena. Apenas um veredito limpo permite download. A fixture de protocolo não substitui ensaio com o daemon e suas assinaturas reais.

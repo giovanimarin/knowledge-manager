@@ -41,7 +41,7 @@ export function Wiki({ token }: { token: string }) {
         Authorization: "Bearer " + token,
         "Content-Type": "application/json",
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(7000),
     });
     if (!response.ok)

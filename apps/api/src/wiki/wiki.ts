@@ -1,3 +1,4 @@
+import { attachmentInput, scanAttachment } from "./attachments.js";
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type TenantTransaction } from "@km/foundation";
 import { assess, localMember, type Action } from "../identity/policy.js";
@@ -304,6 +305,20 @@ export class Wiki {
         this.tx,
       );
     }
+    if (path === "/v1/wiki/mentions" && method === "GET") {
+      const member = localMember(this.actor).id;
+      const rows = (
+        await sql<{ id: string; page_id: string; created_at: Date }>`
+        select c.id,c.page_id,c.created_at from km.wiki_comments c join km.wiki_pages p
+        on p.tenant_id=c.tenant_id and p.id=c.page_id
+        where ${member}::uuid=any(c.mentions) and p.deleted_batch is null order by c.created_at desc
+      `.execute(this.tx)
+      ).rows;
+      const visible = [];
+      for (const row of rows)
+        if (await this.can("content.read", row.page_id)) visible.push(row);
+      return visible.slice(0, 100);
+    }
     if (path === "/v1/wiki/spaces") {
       if (method === "GET") {
         const result = [];
@@ -527,8 +542,42 @@ export class Wiki {
         ).rows.length
       )
         throw missing();
-      await sql`insert into km.wiki_comments(tenant_id,page_id,id,root_id,actor_id,anchor,body)
-        values (${this.tenant},${key},${comment},${root},${member},${optionalId(body.anchor)},${string(body.text, 4000)})`.execute(
+      const mentions = body.mentions ?? [];
+      if (!Array.isArray(mentions) || mentions.length > 10) throw invalid();
+      const recipients = [];
+      for (const recipient of new Set(mentions.map(id))) {
+        const target = (
+          await sql<{
+            id: string;
+            admin: boolean;
+            require_mfa: boolean;
+            totp_secret: string | null;
+          }>`
+          select m.id,m.admin,(o.require_mfa or km.member_requires_mfa(m.tenant_id,m.id)) require_mfa,
+            case when m.totp_secret is null then null else 'enrolled' end totp_secret
+          from km.memberships m join km.organizations o using(tenant_id)
+          where m.id=${recipient} and m.state='active' and (m.guest_until is null or m.guest_until>now())
+        `.execute(this.tx)
+        ).rows[0];
+        if (
+          target &&
+          (await assess(
+            this.tx,
+            this.tenant,
+            { kind: "member", member: { ...target, stepped_up: false } },
+            {
+              action: "content.read",
+              resource: key,
+              channel: "web",
+              purpose: "default",
+              external: false,
+            },
+          ))
+        )
+          recipients.push(recipient);
+      }
+      await sql`insert into km.wiki_comments(tenant_id,page_id,id,root_id,actor_id,anchor,body,mentions)
+        values (${this.tenant},${key},${comment},${root},${member},${optionalId(body.anchor)},${string(body.text, 4000)},${recipients}::uuid[])`.execute(
         this.tx,
       );
       await this.event("comment.create", key);
@@ -580,17 +629,12 @@ export class Wiki {
     }
     await this.require("content.edit", key);
     if (method === "POST") {
-      const filename = string(body.filename, 180);
-      const type = string(body.contentType, 100);
-      const encoded = string(body.data, 80000);
-      const bytes = Buffer.from(encoded, "base64");
-      if (
-        !bytes.length ||
-        bytes.toString("base64") !== encoded ||
-        /[\\/]/.test(filename) ||
-        [...filename].some((char) => char.charCodeAt(0) < 32)
-      )
-        throw invalid();
+      const { filename, type, bytes } = attachmentInput(body);
+      const scanState = await scanAttachment(bytes);
+      if (scanState === "rejected") {
+        await this.event("attachment.rejected", key);
+        return { scanState };
+      }
       const loaded = (
         await sql<{
           total: number;
@@ -602,12 +646,12 @@ export class Wiki {
         throw new IdentityError(429);
       const upload = randomUUID();
       const hash = createHash("sha256").update(bytes).digest("hex");
-      await sql`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,bytes,sha256)
-        values (${this.tenant},${key},${upload},${filename},${type},${bytes},${hash})`.execute(
+      await sql`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,bytes,sha256,scan_state)
+        values (${this.tenant},${key},${upload},${filename},${type},${bytes},${hash},${scanState})`.execute(
         this.tx,
       );
       await this.event("attachment.stage", key);
-      return { id: upload, sha256: hash, scanState: "pending" };
+      return { id: upload, sha256: hash, scanState };
     }
     if (method === "DELETE" && leaf) {
       const deleted =
