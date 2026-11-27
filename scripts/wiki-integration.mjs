@@ -246,6 +246,34 @@ assert.equal(db("set role km_app; select count(*) from km.wiki_pages"), "0");
 db(
   `delete from km.identity_grants where tenant_id='${tenant}' and id='${deny}'`,
 );
+const disposable = await request("POST", "/pages", {
+  spaceId: space.id,
+  title: "Documento descartável",
+});
+await request("DELETE", "/pages/" + disposable.id);
+db(
+  `update km.session_families set step_until=now()+interval '2 minutes' where tenant_id='${tenant}' and member_id='${adminMemberA}' and revoked_at is null`,
+);
+await request("POST", "/trash/" + disposable.id + "/purge", {
+  kind: "page",
+  confirm: disposable.id,
+});
+await request(
+  "POST",
+  "/trash/" + disposable.id + "/restore",
+  { kind: "page" },
+  adminA,
+  404,
+);
+assert.equal(
+  db(
+    `select count(*) from km.wiki_tombstones where tenant_id='${tenant}' and id='${disposable.id}'`,
+  ),
+  "1",
+);
+db(
+  `update km.session_families set step_until=null where tenant_id='${tenant}' and member_id='${adminMemberA}'`,
+);
 const email = "wiki-reader@example.invalid";
 const invitation = await request("POST", "/v1/members", {
   email,
@@ -259,6 +287,21 @@ const browserMember = await request(
 );
 db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect)
  values ('${tenant}',gen_random_uuid(),'${role}','${browserMember.id}','${space.id}','allow')`);
+await request("POST", "/pages/" + root.id + "/comments", {
+  text: "Menção de teste",
+  mentions: [browserMember.id, randomUUID()],
+});
+const reader = await request(
+  "POST",
+  "/v1/sessions",
+  { orgHint: tenant, email, password: secret },
+  null,
+);
+assert.equal(
+  (await request("GET", "/mentions", undefined, reader.accessToken))[0].page_id,
+  root.id,
+);
+assert.deepEqual(await request("GET", "/mentions", undefined, adminB), []);
 writeFileSync(
   browserFile,
   JSON.stringify({ tenant, email, password: secret }),
