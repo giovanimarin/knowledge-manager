@@ -211,6 +211,10 @@ assert.equal(
   (await request("GET", "/pages/" + root.id + "/relations"))[0].broken,
   true,
 );
+// Explicitly expire the enrollment-derived step-up for the negative case.
+db(
+  `update km.session_families set step_until=null where tenant_id='${tenant}' and member_id='${adminMemberA}'`,
+);
 assert.ok((await request("GET", "/trash")).some((row) => row.id === child.id));
 await request(
   "POST",
