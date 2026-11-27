@@ -1,3 +1,4 @@
+import { ingest } from "../ingestion/api.js";
 import { EditorStore } from "../editor/store.js";
 import { Lifecycle } from "../editor/lifecycle.js";
 import { All, Body, Controller, Inject, Req, Res } from "@nestjs/common";
@@ -128,6 +129,10 @@ export class IdentityController {
         5,
       );
     }
+    if (pathname.startsWith("/v1/ingestion/"))
+      return this.sessions.withActor(auth, (tx, tenant, actor) =>
+        ingest(new EditorStore(tx, tenant, actor), req.method ?? "", pathname),
+      );
     if (pathname.startsWith("/v1/editor/"))
       return this.sessions.withActor(auth, (tx, tenant, actor) =>
         new Lifecycle(new EditorStore(tx, tenant, actor)).dispatch(

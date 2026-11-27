@@ -304,10 +304,72 @@ try {
     { approved: true },
     reader.accessToken,
   );
+  const ingestPath = "/ingestion/pages/" + root;
+  assert.deepEqual(await request("GET", ingestPath + "/chunks"), []);
+  await request("GET", ingestPath + "/chunks", undefined, adminB, 404);
+  db(`create function km.test_ingest_retry() returns trigger language plpgsql as $$
+     begin raise exception 'synthetic ingest transaction failure'; end $$;
+     create trigger test_ingest_retry before insert on km.ingest_generations
+     for each row execute function km.test_ingest_retry()`);
   const published = await request("POST", route + "/publication", {
     revision: review.revision,
     expectedRevision: restored.revision,
   });
+  async function untilIngest(condition, label) {
+    const end = performance.now() + 12000;
+    while (performance.now() < end) {
+      const value = await condition();
+      if (value) return value;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    assert.fail(label);
+  }
+  await untilIngest(
+    async () =>
+      (await request("GET", ingestPath + "/jobs")).find(
+        (job) => job.kind === "published" && job.attempts > 0 && job.last_error,
+      ),
+    "retry not recorded",
+  );
+  assert.deepEqual(await request("GET", ingestPath + "/chunks"), []);
+  db(
+    "drop trigger test_ingest_retry on km.ingest_generations; drop function km.test_ingest_retry()",
+  );
+  const chunks = await untilIngest(async () => {
+    const rows = await request("GET", ingestPath + "/chunks");
+    return rows.length ? rows : false;
+  }, "ingestion did not recover");
+  assert.ok(
+    chunks.every(
+      (row) =>
+        row.publication_id === published.id && row.revision === review.revision,
+    ),
+  );
+  assert.ok(chunks.some((row) => row.kind === "table"));
+  assert.ok(
+    chunks.some(
+      (row) =>
+        row.content.includes("Secure action") ||
+        row.content.includes("Texto em português"),
+    ),
+  );
+  const initialIds = chunks.map((row) => row.id);
+  const jobs = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      request("POST", ingestPath + "/reprocess", {}),
+    ),
+  );
+  await untilIngest(
+    async () =>
+      (await request("GET", ingestPath + "/jobs"))
+        .filter((job) => jobs.some((requested) => requested.id === job.id))
+        .every((job) => job.status === "done"),
+    "reprocess did not finish",
+  );
+  assert.deepEqual(
+    (await request("GET", ingestPath + "/chunks")).map((row) => row.id),
+    initialIds,
+  );
   const live = await request("GET", route + "/publication");
   assert.equal(live.revision, review.revision);
   assert.equal(live.content, view.content);
@@ -325,6 +387,18 @@ try {
     expectedRevision: restored.revision,
   });
   await request("GET", route + "/publication", undefined, adminA, 404);
+  assert.deepEqual(await request("GET", ingestPath + "/chunks"), []);
+  await untilIngest(
+    () =>
+      db(
+        `select count(*) from km.ingest_generations where tenant_id='${tenant}' and page_id='${root}'`,
+      ) === "0",
+    "withdrawn generation not removed",
+  );
+  console.log(
+    "Ingestão G3: publicação, rollback/retry, reprocessamento concorrente, ACL e retirada",
+  );
+
   const scheduled = await request("POST", route + "/publication", {
     revision: review.revision,
     expectedRevision: restored.revision,
