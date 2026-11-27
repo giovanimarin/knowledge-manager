@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type Space = { id: string; title: string };
 type Summary = {
@@ -30,6 +30,8 @@ export function Wiki({ token }: { token: string }) {
   const [space, setSpace] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<string>();
+  const dragged = useRef<string | null>(null);
 
   async function call<T>(
     path: string,
@@ -65,6 +67,7 @@ export function Wiki({ token }: { token: string }) {
   }
   async function open(id: string) {
     setCurrent(undefined);
+    setPreview(undefined);
     setComments([]);
     setAttachments([]);
     setRelations([]);
@@ -124,7 +127,32 @@ export function Wiki({ token }: { token: string }) {
           .sort((a, b) => a.position - b.position)
           .map((page) => (
             <li key={page.id}>
-              <button onClick={() => attempt(() => open(page.id))}>
+              <button
+                draggable
+                onDragStart={() => {
+                  dragged.current = page.id;
+                }}
+                onDragEnd={() => {
+                  dragged.current = null;
+                }}
+                onDragOver={(event) => {
+                  if (dragged.current && page.space_id) event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const source = dragged.current;
+                  dragged.current = null;
+                  if (source && source !== page.id && page.space_id)
+                    attempt(async () => {
+                      await call("/pages/" + source + "/move", "POST", {
+                        spaceId: page.space_id,
+                        parentId: page.id,
+                      });
+                      await browse();
+                    });
+                }}
+                onClick={() => attempt(() => open(page.id))}
+              >
                 {page.title}
               </button>
               {page.snippet && <p>{page.snippet}</p>}
@@ -326,6 +354,27 @@ export function Wiki({ token }: { token: string }) {
                   : file.scan_state === "clean"
                     ? "Verificado"
                     : "Rejeitado"}
+                {file.scan_state === "clean" &&
+                  file.content_type.startsWith("text/") && (
+                    <button
+                      onClick={() =>
+                        attempt(async () => {
+                          const fileData = await call<{ data: string }>(
+                            "/pages/" + current.id + "/attachments/" + file.id,
+                          );
+                          setPreview(
+                            new TextDecoder().decode(
+                              Uint8Array.from(atob(fileData.data), (char) =>
+                                char.charCodeAt(0),
+                              ),
+                            ),
+                          );
+                        })
+                      }
+                    >
+                      Prévia de texto
+                    </button>
+                  )}
                 {file.scan_state === "clean" && (
                   <button
                     onClick={() =>
@@ -391,6 +440,14 @@ export function Wiki({ token }: { token: string }) {
             </label>
             <button>Enviar anexos</button>
           </form>
+          {preview !== undefined && (
+            <section aria-label="Prévia do anexo">
+              <button onClick={() => setPreview(undefined)}>
+                Fechar prévia
+              </button>
+              <pre>{preview}</pre>
+            </section>
+          )}
           <h4>Relações</h4>
           <ul>
             {relations.map((relation) => (
@@ -415,6 +472,41 @@ export function Wiki({ token }: { token: string }) {
               </li>
             ))}
           </ul>
+          <form
+            onSubmit={(event) =>
+              submit(event, async (form) => {
+                await call("/pages/" + current.id + "/relations", "POST", {
+                  targetId: form.get("targetId"),
+                  type: form.get("type"),
+                });
+                await open(current.id);
+              })
+            }
+          >
+            <label>
+              Documento relacionado{" "}
+              <select name="targetId" required>
+                <option value="">Selecionar</option>
+                {pages
+                  .filter((item) => item.id !== current.id)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Tipo de relação{" "}
+              <select name="type">
+                <option value="reference">Referência</option>
+                <option value="dependency">Dependência</option>
+                <option value="complement">Complemento</option>
+                <option value="replacement">Substituição</option>
+              </select>
+            </label>
+            <button>Adicionar relação</button>
+          </form>
         </article>
       )}
     </section>
