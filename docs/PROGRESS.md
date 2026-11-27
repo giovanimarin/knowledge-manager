@@ -77,3 +77,16 @@ Validação ponderada **100%** (M01 10/10, M02 10/10, M03 10/10, M04 10/10). Ess
 - Os três jobs finais passaram na [execução 45923608409](https://github.com/giovanimarin/knowledge-manager/actions/runs/45923608409), com artefatos de smoke e auditoria. Revisão final registrada no PR #5.
 - Ruleset `Main Protection` (`28200918`) verificado ativo e exigindo os três checks, branch atualizada, pull request e sem bypass. PR descartável #6 comprovou bloqueio com verify vermelho e `mergeable_state: blocked`, encerrado sem merge.
 - Marco M01/M02/M03/M04 e 40/40 subtarefas aceitos. Próximo: PKG-02, com isolamento real shared A/B, dedicated C, sessões/MFA, papéis, RLS e topologias executáveis. Pacotes futuros mantêm seus gates independentes de integração, sandbox e produção.
+
+## PKG-02 — plano inicial
+
+Estimativa de 128–208 h, conforme roadmap. Os pesos totalizam 100%. A fração validada de subtarefas de cada linha pondera o progresso do pacote. A revisão e os gates continuam obrigatórios. Inicialmente nenhuma subtarefa de implementação está comprovada.
+
+| Marco | Peso | Estimativa | Tarefas e subtarefas | Aceite |
+| --- | --- | --- | --- | --- |
+| I1 Contratos e isolamento | 25% | 32–52 h | I1.1 contratos C1/U2 e negativos; I1.2 migração versionada, papéis e FKs; I1.3 contexto RLS transacional; I1.4 auditoria e revogação duráveis | A/B no mesmo banco e C dedicado. Ausência de contexto nega, escrita transversal falha, auditoria não se altera em runtime. |
+| I2 Identidade e sessão | 30% | 38–62 h | I2.1 bootstrap e convites/membership; I2.2 local/Argon2id, limites e recuperação; I2.3 TOTP, códigos e step-up; I2.4 rotação, expiração, logout, revogação | Provar uso único, replay, política de senha, isolamento por organização e troca explícita. |
+| I3 Autorização e serviços | 25% | 32–52 h | I3.1 papéis/grupos e administração; I3.2 RBAC/ABAC, herança e grants temporários; I3.3 API keys e client credentials; I3.4 delegação e introspecção | Default deny, deny prioritário, tenant admin sem leitura implícita, delegação por interseção. |
+| I4 Topologias e qualidade | 20% | 26–42 h | I4.1 C dedicado e shared A/B; I4.2 escala API/worker com leases e quotas; I4.3 testes HTTP/DB/UI e regressão PKG-01; I4.4 auditorias, runbook e aceite | Evidência de ambientes reais locais, três checks, negativas entre stacks e teste concorrente. |
+
+Federação externa, vínculos de canal, aplicação das ACLs aos dados de cada domínio, console de control plane completo e migração operacional permanecem nas fronteiras aprovadas dos pacotes responsáveis. [Mapa de decisão](specification/traceability.md) · [Contratos PKG-02](packages/PKG-02-contracts.md).

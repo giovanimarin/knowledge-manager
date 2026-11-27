@@ -1,0 +1,663 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "KnowledgeManager Identity",
+    "version": "0.2.0"
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "paths": {
+    "/v1/sessions": {
+      "post": {
+        "operationId": "login",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "security": []
+      },
+      "get": {
+        "operationId": "listSessions",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "revokeSessions",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/sessions/refresh": {
+      "post": {
+        "operationId": "refreshSession",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/sessions/{id}": {
+      "delete": {
+        "operationId": "revokeSession",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "operationId": "getPrincipal",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/mfa/enroll": {
+      "post": {
+        "operationId": "enrollMfa",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/mfa/confirm": {
+      "post": {
+        "operationId": "confirmMfa",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/mfa/challenge": {
+      "post": {
+        "operationId": "completeMfa",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/mfa/step-up": {
+      "post": {
+        "operationId": "stepUp",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/recovery": {
+      "post": {
+        "operationId": "requestRecovery",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/recovery/complete": {
+      "post": {
+        "operationId": "completeRecovery",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/members": {
+      "get": {
+        "operationId": "listMembers",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      },
+      "post": {
+        "operationId": "inviteMember",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/members/{id}": {
+      "patch": {
+        "operationId": "changeMember",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/invitations/accept": {
+      "post": {
+        "operationId": "acceptInvitation",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/groups": {
+      "get": {
+        "operationId": "listGroups",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createGroup",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "operationId": "listRoles",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRole",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/grants": {
+      "get": {
+        "operationId": "listGrants",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createGrant",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/access/check": {
+      "post": {
+        "operationId": "checkAccess",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/service-clients": {
+      "get": {
+        "operationId": "listServiceClients",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createServiceClient",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    },
+    "/v1/service-clients/{id}": {
+      "delete": {
+        "operationId": "revokeServiceClient",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/oauth/token": {
+      "post": {
+        "operationId": "clientCredentials",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/audit-events": {
+      "get": {
+        "operationId": "listAuditEvents",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "401": {
+            "description": "Invalid or revoked credentials"
+          },
+          "403": {
+            "description": "Denied by current policy"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Resource not visible"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
