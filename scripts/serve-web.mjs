@@ -18,7 +18,9 @@ const server = createServer(async (request, response) => {
         request.url,
       )
         ? 12 * 1024 * 1024
-        : 100 * 1024;
+        : /^\/v1\/ingestion\/sources\/[^/]+\/sync$/.test(request.url)
+          ? 2 * 1024 * 1024
+          : 100 * 1024;
     try {
       const chunks = [];
       let size = 0;
