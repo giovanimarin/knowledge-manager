@@ -1,3 +1,4 @@
+import { WikiTransfer } from "./wiki-transfer";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type Space = { id: string; title: string };
@@ -10,7 +11,13 @@ type Summary = {
   snippet: string | null;
 };
 type Page = Summary & { content: string; revision: number; tags: string[] };
-type Comment = { id: string; body: string; resolved: boolean };
+type Comment = {
+  id: string;
+  body: string;
+  resolved: boolean;
+  anchor: string | null;
+  orphaned: boolean;
+};
 type Attachment = {
   id: string;
   filename: string;
@@ -199,6 +206,14 @@ export function Wiki({ token }: { token: string }) {
         </label>
         <button>Buscar</button>
       </form>
+      {(space || current) && (
+        <WikiTransfer
+          call={call}
+          spaceId={space}
+          pageId={current?.id}
+          refresh={() => browse()}
+        />
+      )}
       {tree(null)}
       <details>
         <summary>Criar espaço</summary>
@@ -286,6 +301,11 @@ export function Wiki({ token }: { token: string }) {
               <li key={comment.id}>
                 {comment.body}
                 {comment.resolved ? " · Resolvido" : ""}
+                {comment.orphaned
+                  ? " · Bloco removido"
+                  : comment.anchor
+                    ? " · Comentário no bloco"
+                    : ""}
               </li>
             ))}
           </ul>

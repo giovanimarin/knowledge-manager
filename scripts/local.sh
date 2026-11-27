@@ -115,6 +115,11 @@ snapshot_dir() {
   node -e 'console.log(require("node:path").resolve(process.argv[1]))' "$1"
 }
 
+wiki_retention() {
+  local expired
+  expired="$(db -Atq -f /km-infra/wiki-retention.sql)"
+  printf '%s\n' "$expired" | storage prune
+}
 backup() (
   local dir scratch started
   dir="$(snapshot_dir "${1:-}")"
@@ -129,6 +134,7 @@ backup() (
   compose stop web worker api
   verify_fixture
   compose exec -T db pg_dump -Fc -U km_bootstrap -d km > "$scratch/database.dump"
+  db -Atc "SELECT tenant_id::text||'/'||id::text FROM km.wiki_attachments WHERE object_size IS NOT NULL" | storage reconcile
   storage snapshot > "$scratch/storage.json"
   node scripts/manifest.mjs create "$scratch"
   node scripts/manifest.mjs verify "$scratch"
@@ -172,7 +178,7 @@ restore() {
 command="${1:-}"
 shift || true
 case "$command" in
-  setup|start|stop|smoke|backup|restore|bootstrap)
+  setup|start|stop|smoke|backup|restore|bootstrap|wiki-retention)
     [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Projeto Compose inválido' >&2; exit 1; }
     lock="${TMPDIR:-/tmp}/km-compose-$COMPOSE_PROJECT_NAME.lock"
     mkdir "$lock" || { echo 'Outra operação está ativa para este projeto' >&2; exit 1; }
@@ -189,6 +195,7 @@ case "$command" in
   doctor) prerequisites ;;
   smoke) bash scripts/smoke.sh ;;
   backup) backup "$@" ;;
+  wiki-retention) wiki_retention ;;
   restore) restore "$@" ;;
   *) echo 'Operação desconhecida' >&2; exit 1 ;;
 esac

@@ -397,6 +397,75 @@ assert.equal(
   ),
   "1",
 );
+const expiredParent = await request("POST", "/pages", {
+  spaceId: space.id,
+  title: "Raiz de retenção",
+});
+const expiredChild = await request("POST", "/pages", {
+  spaceId: space.id,
+  parentId: expiredParent.id,
+  title: "Filho de retenção",
+});
+const expiredFile = await request(
+  "POST",
+  "/pages/" + expiredChild.id + "/attachments",
+  upload,
+);
+assert.equal(expiredFile.scanState, "clean");
+await request("DELETE", "/pages/" + expiredParent.id);
+await request(
+  "GET",
+  "/pages/" + expiredChild.id + "/attachments/" + expiredFile.id,
+  undefined,
+  adminA,
+  404,
+);
+await request("POST", "/pages/" + expiredParent.id + "/restore", {});
+assert.equal(
+  (
+    await request(
+      "GET",
+      "/pages/" + expiredChild.id + "/attachments/" + expiredFile.id,
+    )
+  ).data,
+  upload.data,
+);
+await request("DELETE", "/pages/" + expiredParent.id);
+db(
+  `update km.wiki_pages set deleted_at=now()-interval '46 days' where tenant_id='${tenant}' and deleted_batch='${expiredParent.id}'`,
+);
+await request(
+  "POST",
+  "/pages/" + expiredParent.id + "/restore",
+  {},
+  adminA,
+  404,
+);
+execFileSync("bash", ["scripts/local.sh", "wiki-retention"], {
+  stdio: "inherit",
+});
+assert.equal(
+  db(
+    `select count(*) from km.wiki_tombstones where tenant_id='${tenant}' and id in ('${expiredChild.id}','${expiredParent.id}')`,
+  ),
+  "2",
+);
+assert.equal(
+  db(
+    `select count(*) from km.identity_audit where tenant_id='${tenant}' and resource_id='${expiredParent.id}' and action='wiki.trash.retention'`,
+  ),
+  "1",
+);
+await request(
+  "POST",
+  "/pages/" + expiredParent.id + "/restore",
+  {},
+  adminA,
+  404,
+);
+console.log(
+  "Wiki retenção: subárvore e bytes restaurados, janela vencida e purga terminal auditada",
+);
 const email = "wiki-reader@example.invalid";
 const invitation = await request("POST", "/v1/members", {
   email,
@@ -427,7 +496,13 @@ assert.equal(
 assert.deepEqual(await request("GET", "/mentions", undefined, adminB), []);
 writeFileSync(
   browserFile,
-  JSON.stringify({ tenant, email, password: secret, root: root.id }),
+  JSON.stringify({
+    tenant,
+    email,
+    password: secret,
+    root: root.id,
+    hiddenSpace: other.id,
+  }),
   { mode: 0o600 },
 );
 for (const [mode, url] of [

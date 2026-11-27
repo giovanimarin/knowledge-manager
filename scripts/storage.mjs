@@ -94,6 +94,26 @@ switch (process.argv[2]) {
     }
     break;
   }
+  case "prune": {
+    for (const key of (await stdin()).toString().split("\n").filter(Boolean)) {
+      if (!objectKey(key) || !key.includes("/"))
+        throw new Error("Invalid private object key");
+      await rm(join(objects, key), { force: true });
+    }
+    break;
+  }
+  case "reconcile": {
+    const referenced = new Set(
+      (await stdin()).toString().split("\n").filter(Boolean),
+    );
+    for (const key of referenced)
+      if (!objectKey(key) || !key.includes("/"))
+        throw new Error("Invalid private object key");
+    for await (const key of inventory(objects))
+      if (key.includes("/") && !referenced.has(key))
+        await rm(join(objects, key));
+    break;
+  }
   case "check": {
     const content = await stdin();
     for (const line of content.toString().trim().split("\n").filter(Boolean)) {
