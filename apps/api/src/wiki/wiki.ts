@@ -157,20 +157,28 @@ export class Wiki {
     const until = query.get("until");
     for (const date of [since, until])
       if (date && !Number.isFinite(Date.parse(date))) throw invalid();
+    const candidates = (
+      await sql<{ id: string }>`
+      select id from km.wiki_pages where deleted_batch is null and (${space}::uuid is null or space_id=${space})
+    `.execute(this.tx)
+    ).rows;
+    const allowed = [];
+    for (const { id } of candidates)
+      if (await this.can("content.read", id)) allowed.push(id);
+    if (!allowed.length) return [];
     const rows = (
       await sql<Page>`select p.*,r.classification from km.wiki_pages p join km.identity_resources r using (tenant_id,id)
-      where p.deleted_batch is null and (${space}::uuid is null or p.space_id=${space})
+      where p.deleted_batch is null and p.id=any(${allowed}::uuid[])
       and (${author}::uuid is null or p.author_id=${author})
       and (${tag}::text is null or ${tag}=any(p.tags))
       and (${since}::timestamptz is null or updated_at>=${since}::timestamptz)
       and (${until}::timestamptz is null or updated_at<=${until}::timestamptz)
       and (${term}::text is null or strpos(lower(title || ' ' || content),lower(${term}::text))>0)
       order by case when ${query.get("sort")}::text='relevance' then strpos(lower(title),lower(coalesce(${term}::text,'')))>0 end desc nulls last,
-      updated_at desc,id desc`.execute(this.tx)
+      updated_at desc,id desc limit 100`.execute(this.tx)
     ).rows;
     const visible = [];
     for (const row of rows) {
-      if (!(await this.can("content.read", row.id))) continue;
       const { content, ...summary } = await this.visiblePage(row);
       const position = term
         ? content.toLowerCase().indexOf(term.toLowerCase())
@@ -182,7 +190,6 @@ export class Wiki {
             ? null
             : content.slice(Math.max(0, position - 30), position + 120),
       });
-      if (visible.length >= 100) break;
     }
     return visible;
   }

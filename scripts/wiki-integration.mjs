@@ -248,6 +248,27 @@ writeFileSync(
   JSON.stringify({ tenant, email, password: secret }),
   { mode: 0o600 },
 );
+for (const [mode, url] of [
+  ["filtered", "/pages?q=Access%20checklist&spaceId=" + space.id],
+  ["unfiltered", "/pages"],
+]) {
+  const elapsed = [];
+  for (let i = 0; i < 15; i++) {
+    const start = performance.now();
+    await request("GET", url);
+    elapsed.push(performance.now() - start);
+  }
+  elapsed.sort((a, b) => a - b);
+  console.log(
+    "Wiki benchmark " +
+      JSON.stringify({
+        mode,
+        requests: elapsed.length,
+        p50Ms: elapsed[7],
+        p95Ms: elapsed[14],
+      }),
+  );
+}
 console.log(
   "Wiki G1/G2: árvore, ACL ativa, busca, comentários, anexos em quarentena, templates e restauração",
 );
