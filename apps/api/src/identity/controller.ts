@@ -1,3 +1,5 @@
+import { EditorStore } from "../editor/store.js";
+import { Lifecycle } from "../editor/lifecycle.js";
 import { All, Body, Controller, Inject, Req, Res } from "@nestjs/common";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -80,9 +82,13 @@ export class IdentityController {
 
   private async dispatch(req: IncomingMessage, pathname: string, raw: unknown) {
     const key = `${req.method} ${pathname}`;
-    const body = ["POST", "PUT", "PATCH"].includes(req.method ?? "")
-      ? input(raw)
-      : {};
+    const body =
+      ["POST", "PUT", "PATCH"].includes(req.method ?? "") ||
+      (req.method === "DELETE" &&
+        raw !== undefined &&
+        pathname.startsWith("/v1/editor/"))
+        ? input(raw)
+        : {};
     const address = req.socket.remoteAddress ?? "unknown";
     const auth = req.headers.authorization;
     const publicProof = {
@@ -122,6 +128,14 @@ export class IdentityController {
         5,
       );
     }
+    if (pathname.startsWith("/v1/editor/"))
+      return this.sessions.withActor(auth, (tx, tenant, actor) =>
+        new Lifecycle(new EditorStore(tx, tenant, actor)).dispatch(
+          req.method ?? "",
+          pathname,
+          body,
+        ),
+      );
     if (pathname.startsWith("/v1/wiki/")) {
       const holder: { wiki?: Wiki } = {};
       let committed = false;

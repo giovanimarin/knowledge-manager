@@ -35,14 +35,15 @@ JS
 }
 
 migrate() {
-  local checksum identity_checksum worker_checksum wiki_checksum wiki_objects_checksum wiki_uploads_checksum
+  local checksum identity_checksum worker_checksum wiki_checksum wiki_objects_checksum wiki_uploads_checksum editor_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
   identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
   worker_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v3-up.sql")).digest("hex"))')"
   wiki_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v4-up.sql")).digest("hex"))')"
   wiki_objects_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v5-up.sql")).digest("hex"))')"
   wiki_uploads_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v6-up.sql")).digest("hex"))')"
-  db -v "wiki_uploads_checksum=$wiki_uploads_checksum" -v "wiki_objects_checksum=$wiki_objects_checksum" -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
+  editor_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v7-up.sql")).digest("hex"))')"
+  db -v "editor_checksum=$editor_checksum" -v "wiki_uploads_checksum=$wiki_uploads_checksum" -v "wiki_objects_checksum=$wiki_objects_checksum" -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {
