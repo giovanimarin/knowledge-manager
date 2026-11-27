@@ -114,7 +114,9 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
-  const asset = /^\/assets\/([A-Za-z0-9][A-Za-z0-9_.-]*\.(js|css))$/.exec(path ?? "");
+  const asset = /^\/assets\/([A-Za-z0-9][A-Za-z0-9_.-]*\.(js|css))$/.exec(
+    path ?? "",
+  );
   if (asset) {
     try {
       const value = await readFile(join(distribution, "assets", asset[1]));
