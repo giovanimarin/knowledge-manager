@@ -181,3 +181,16 @@ Rodadas intermediárias expuseram problemas de licença transitiva, advisories e
 - Pacotes aceitos **3/18 (16,7%)**. Isso não é medida de esforço completo do produto nem prontidão comercial.
 - Limites dos gates posteriores mantidos: integração autenticada real com Confluence/Notion (sandbox/G4), OCR e indexação avançada PKG-05, reconciliação autoritativa de tombstones entre backups PKG-14. A assinatura sintética ClamAV usada no CI não comprova eficácia operacional da base de assinaturas de produção.
 - **Próximo PKG-04:** editor rico/blocos e colaboração CRDT/WS real-time, versões/diffs, fluxos de revisão/publicação, ACL/revogação. Planejar marcos, pesos, subtarefas e contratos verificáveis antes de implementar. Regressões PKG-01 a 03 e gates G1/G3 obrigatórios. Escopo total aprovado preservado, sem contratação de serviços pagos.
+
+## PKG-04 — plano de execução
+
+Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o peso entre quatro subtarefas. Baseline 0/16 antes do código.
+
+| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
+| --- | --- | --- |
+| E1 Editor e blocos · 25% | 30–48 h | E1.1 validar tipos/IDs de blocos e round-trip; E1.2 formatação, listas/checklists e tabelas; E1.3 links, imagens, Mermaid, código e callouts seguros; E1.4 atalhos Markdown/slash, autosave e UI acessível. |
+| E2 Sessão e persistência · 35% | 42–67 h | E2.1 WebSocket autenticado com sync/update/ACK durável; E2.2 CRDT converge com clientes concorrentes, reconexão e reinício; E2.3 presença/cursores efêmeros; E2.4 negar revogação ativa e acessos shared/dedicated antes de leitura ou gravação. |
+| E3 Versões e publicação · 30% | 36–58 h | E3.1 histórico com autor/data, diff e retenção; E3.2 restauração como revisão nova; E3.3 revisão de snapshot, responsável, revisores e aprovação conforme política do espaço; E3.4 publicação imutável, validade, arquivamento e evento durável sem expor rascunho. |
+| E4 Evidência · 10% | 12–19 h | E4.1 contratos e negativos; E4.2 browser e WS multi-cliente; E4.3 regressões 01–03 e três checks; E4.4 relatório G1/G3 e runbook com limites comprovados. |
+
+[Contratos e fixtures do PKG-04](packages/PKG-04-contracts.md)
