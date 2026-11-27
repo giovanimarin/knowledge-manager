@@ -16,7 +16,7 @@ const sample = {
 };
 
 test("wiki attachments validate actual bytes and reject unsafe filenames and MIME mismatches", () => {
-  assert.equal(attachmentInput(sample).bytes.toString(), "test\n");
+  assert.equal(attachmentInput(sample).bytes.toString(), "teste\n");
   for (const invalid of [
     { ...sample, filename: "../fixture.txt" },
     { ...sample, filename: "fixture.pdf", contentType: "application/pdf" },
