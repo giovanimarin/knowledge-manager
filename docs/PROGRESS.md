@@ -94,7 +94,7 @@ Federação externa, vínculos de canal, aplicação das ACLs aos dados de cada 
 
 ## PKG-02 — execução e evidências
 
-O plano foi registrado no commit `636adc5`, antes da implementação. O [PR #8](https://github.com/giovanimarin/knowledge-manager/pull/8) inclui o encerramento documental do PKG-01 que está no PR #7. Os três checks do PR #7 passaram na [execução 45924055966](https://github.com/giovanimarin/knowledge-manager/actions/runs/45924055966). O aceite do PKG-02 é separado do aceite já registrado do PKG-01.
+O plano foi registrado no commit `636adc5`, antes da implementação. O [PR #8](https://github.com/giovanimarin/knowledge-manager/pull/8) inclui o commit `cd51164` do PR #7, que foi fechado sem merge. O conteúdo do encerramento formal do PKG-01 foi preservado. Os três checks do PR #7 passaram na [execução 45924055966](https://github.com/giovanimarin/knowledge-manager/actions/runs/45924055966). O aceite do PKG-02 é separado do aceite já registrado do PKG-01.
 
 | Marco | Subtarefas verificadas | Evidência e pendências |
 | --- | --- | --- |
@@ -102,8 +102,15 @@ O plano foi registrado no commit `636adc5`, antes da implementação. O [PR #8](
 | I2 | I2.1–I2.4 | Bootstrap, convites, senhas Argon2id, limites, MFA e códigos de recuperação, rotatividade e reuso, revogação ativa e troca de empresa. [Roteiro de operação](packages/PKG-02-runbook.md). |
 | I3 | I3.1–I3.4 | Papéis e grupos, herança, negação prioritária, administração sem privilégio implícito de conteúdo, chaves de API e delegação testadas com tokens e banco reais. Reforços `7f2d251`. |
 | I4 | I4.1 e I4.3 | Shared A/B e dedicado C, bloqueio entre stacks, regressão de inicialização limpa, falhas do banco e Redis, backup, restore e migrações; instalação dedicada de organização única em `62e9fea` e saída estruturada em `e11db06`. |
-| I4 | I4.2 e I4.4 em validação | A suíte testa duas réplicas de API/worker, idempotência do recibo do worker BullMQ e quota concorrente de autenticação. Lease e quota por tenant no processamento do worker ainda carecem de evidência direta. Aceite final e revisão do PR pendentes. |
+| I4 | I4.2 e I4.4 concluídas | `0bf5f46` aplica limites e leases no worker. O Actions comprovou duas réplicas, dois tenants simultâneos, isolamento de quotas, pico global, renovação, expiração, recuperação, retry e nenhum efeito duplicado. Os três checks do commit passaram, incluindo regressão do PKG-01 e isolamento shared/dedicated. A revisão final do PR permanece pendente. |
 
-Validação ponderada registrada **90%** (I1 4/4, I2 4/4, I3 4/4, I4 2/4). Pacotes aceitos **1/18**. A primeira rodada integrada passou pelos três checks em `f83a8f9`. O replay de prova de MFA, o bloqueio após restore e o provisionamento dedicado foram refinados nas rodadas seguintes. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45925880256) · [Execução do código após os refinamentos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45926503444).
+Validação ponderada registrada **100%** (I1 4/4, I2 4/4, I3 4/4, I4 4/4). Pacotes aceitos **1/18**. A primeira rodada integrada passou pelos três checks em `f83a8f9`. O replay de prova de MFA, o bloqueio após restore e o provisionamento dedicado foram refinados nas rodadas seguintes. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45925880256) · [Execução do código após os refinamentos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45926503444).
 
 A tentativa de repetir toda a instalação no runner local foi interrompida por falta de espaço no armazenamento Docker. A validação Compose completa segue no GitHub Actions, em instalações descartáveis. Gates de sandbox e rollout continuam vinculados aos pacotes definidos no roadmap.
+
+
+### Evidência da revisão técnica I4.2 e I4.4
+
+- Duas réplicas processaram A e B simultaneamente. Picos reais de **1** job para A, **2** para B e **3** na stack. A segunda admissão de A ocorreu após **6.981,42 ms**, acima da janela de 6.500 ms. B completou quatro jobs enquanto A ainda aguardava a segunda admissão.
+- Lease inicial de 3 s renovado durante job de 4,6 s. Após matar a réplica proprietária, B continuou e A voltou a concluir em **6.946 ms**, medidos da queda até o recibo. O token anterior foi recusado após a retomada. Falha transacional explícita na primeira tentativa, sucesso no retry e zero efeitos duplicados.
+- Os três checks obrigatórios passaram no head de implementação `0bf5f46`. No smoke limpo, o Playwright passou 3/3 em 2,0 s, o backup levou 10 s e a restauração 14 s. O teste incluiu regressão de PKG-01 e os negativos multiempresa. A suíte revisada em `3664233` também acrescenta negativo do worker dedicado e teste unitário do contrato. O `pnpm verify` local nessa revisão executou oito testes em 2,189 s, todos aprovados. [Execução do código](https://github.com/giovanimarin/knowledge-manager/actions/runs/45928682541) · [Logs e worker-metrics.json](https://github.com/giovanimarin/knowledge-manager/actions/runs/45928682541/artifacts/15167797503) · [Execução com teste dedicado](https://github.com/giovanimarin/knowledge-manager/actions/runs/45928853423).

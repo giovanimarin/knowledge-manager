@@ -1,16 +1,8 @@
 {
   "version": 1,
   "operations": {
-    "setup": {
-      "command": "make setup",
-      "success": 0,
-      "failure": 2
-    },
-    "smoke": {
-      "command": "make smoke",
-      "success": 0,
-      "failure": 2
-    },
+    "setup": { "command": "make setup", "success": 0, "failure": 2 },
+    "smoke": { "command": "make smoke", "success": 0, "failure": 2 },
     "backup": {
       "command": "make backup DIR=<new-directory>",
       "success": 0,
@@ -28,42 +20,20 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
+      "properties": { "id": { "type": "string", "format": "uuid" } }
     },
-    "result": {
-      "const": "recorded"
-    },
-    "examples": [
-      {
-        "id": "91c4c9d5-f45e-4f78-ab8f-fcf2337d86fb"
-      }
-    ]
+    "result": { "const": "recorded" },
+    "examples": [{ "id": "91c4c9d5-f45e-4f78-ab8f-fcf2337d86fb" }]
   },
   "backupManifest": {
     "type": "object",
     "additionalProperties": false,
     "required": ["version", "createdAt", "databaseSha256", "storageSha256"],
     "properties": {
-      "version": {
-        "const": 1
-      },
-      "createdAt": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "databaseSha256": {
-        "type": "string",
-        "pattern": "^[a-f0-9]{64}$"
-      },
-      "storageSha256": {
-        "type": "string",
-        "pattern": "^[a-f0-9]{64}$"
-      }
+      "version": { "const": 1 },
+      "createdAt": { "type": "string", "format": "date-time" },
+      "databaseSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+      "storageSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
     }
   },
   "tenantProbeJob": {
