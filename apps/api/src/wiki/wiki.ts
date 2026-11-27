@@ -85,11 +85,12 @@ function tags(value: unknown) {
 
 export class Wiki {
   private readonly removals = new Set<string>();
-  private readonly writes = new Set<string>();
 
   async finishObjects(committed: boolean) {
-    const keys = committed ? this.removals : this.writes;
-    for (const key of keys) {
+    // An interrupted commit can leave the database outcome unknown. Backup
+    // reconciles unreferenced writes while all writers are stopped.
+    if (!committed) return;
+    for (const key of this.removals) {
       try {
         await removeObject(this.tenant, key);
       } catch {
@@ -868,6 +869,9 @@ export class Wiki {
           "comments",
           "access-control",
           ...files.extraLosses,
+          ...(kind === "export" && item.format === "html"
+            ? ["rich-layout"]
+            : []),
           ...(["html", "confluence", "notion", "pdf", "word"].includes(
             item.format,
           ) && kind === "import"
@@ -1269,7 +1273,6 @@ export class Wiki {
       }
       const scanState = await scanAttachment(bytes);
       if (file.bytes !== null) {
-        this.writes.add(file.id);
         await putObject(this.tenant, file.id, bytes);
         await sql`update km.wiki_attachments set scan_state=${scanState},bytes=null,object_size=${bytes.length}
           where page_id=${key} and id=${file.id}`.execute(this.tx);
@@ -1295,7 +1298,6 @@ export class Wiki {
       if (loaded + bytes.length > 50 * 1024 * 1024)
         throw new IdentityError(429);
       const upload = randomUUID();
-      this.writes.add(upload);
       await putObject(this.tenant, upload, bytes);
       const scanState = await scanAttachment(bytes);
       await sql`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,object_size,sha256,scan_state)

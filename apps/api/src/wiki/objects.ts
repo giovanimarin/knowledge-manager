@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { storagePath } from "@km/foundation";
 import { id } from "../identity/security.js";
@@ -10,7 +10,26 @@ function namespace(tenant: string) {
 export async function putObject(tenant: string, key: string, bytes: Buffer) {
   const directory = namespace(tenant);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await writeFile(join(directory, id(key)), bytes, { flag: "wx", mode: 0o600 });
+  const path = join(directory, id(key));
+  const file = await open(path, "wx", 0o600).catch(async (error: unknown) => {
+    if (!(
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "EEXIST"
+    ))
+      throw error;
+    if (!(await readFile(path)).equals(bytes)) throw error;
+    return null;
+  });
+  if (file) {
+    try {
+      await file.writeFile(bytes);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+  }
 }
 
 export const readObject = (tenant: string, key: string) =>
