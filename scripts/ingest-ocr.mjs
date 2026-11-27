@@ -82,7 +82,9 @@ function recognize(bytes, signal) {
 }
 server.requestTimeout = 5000;
 server.listen(socket, () => {
-  void chmod(socket, 0o660).catch(() => process.exit(1));
+  void chmod(socket, process.argv[3] === "--fixture" ? 0o666 : 0o660).catch(
+    () => process.exit(1),
+  );
 });
 function stop() {
   server.close(() => {

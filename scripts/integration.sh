@@ -41,15 +41,14 @@ export KM_OCR_DIR="$scratch/ocr"
 export KM_INGEST_OCR_SOCKET=/km-ocr/ocr.sock
 mkdir -m 755 "$KM_OCR_DIR"
 tesseract --version
-node scripts/ingest-ocr.mjs "$KM_OCR_DIR/ocr.sock" > "$artifacts/ocr.log" 2>&1 &
+node scripts/ingest-ocr.mjs "$KM_OCR_DIR/ocr.sock" --fixture > "$artifacts/ocr.log" 2>&1 &
 ocr_pid=$!
 for _ in {1..40}; do
-  [[ -S "$KM_OCR_DIR/ocr.sock" ]] && break
+  [[ -S "$KM_OCR_DIR/ocr.sock" && "$(stat -c %a "$KM_OCR_DIR/ocr.sock")" == 666 ]] && break
   sleep .1
 done
 [[ -S "$KM_OCR_DIR/ocr.sock" ]]
-# Containers on the disposable runner use a different uid from the host.
-chmod 666 "$KM_OCR_DIR/ocr.sock"
+[[ "$(stat -c %a "$KM_OCR_DIR/ocr.sock")" == 666 ]]
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
