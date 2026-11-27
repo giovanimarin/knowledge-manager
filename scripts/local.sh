@@ -78,7 +78,7 @@ bootstrap() {
   member="$(node -e 'console.log(require("node:crypto").randomUUID())')"
   db -q -v "organization=$organization" -v "member=$member" -v "name=$name" -v "email=$email" -v "display=$display" -v "encoded=$encoded" -v "deployment=$deployment" <<'SQL'
 BEGIN;
-SELECT pg_advisory_xact_lock(71189002);
+SELECT pg_advisory_xact_lock(71189002) AS acquired \gset
 INSERT INTO km.deployment_identity (singleton,mode) VALUES (true,:'deployment') ON CONFLICT DO NOTHING;
 SELECT mode=:'deployment' AND dedicated_tenant IS NULL AS permitted FROM km.deployment_identity WHERE singleton \gset
 \if :permitted
