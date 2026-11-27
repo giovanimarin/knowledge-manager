@@ -70,6 +70,15 @@ const server = createServer(async (request, response) => {
     return;
   }
   const path = request.url?.split("?", 1)[0];
+  if (
+    path === "/licenses/khroma-MIT.txt" ||
+    path === "/licenses/DOMPurify-Apache-2.0.txt"
+  ) {
+    response
+      .writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
+      .end(await readFile(join(distribution, path)));
+    return;
+  }
   if (path === "/") {
     response
       .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })

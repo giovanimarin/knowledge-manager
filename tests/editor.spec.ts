@@ -51,6 +51,15 @@ test("two browser clients share rich autosave and can open a retained comparison
     await expect(
       a.getByText("☑ Verificar rascunho", { exact: true }),
     ).toBeVisible();
+    await a.getByLabel("Tipo do novo bloco").selectOption("mermaid");
+    await a.getByRole("button", { name: "Adicionar bloco" }).click();
+    await a
+      .getByRole("textbox", { name: /Mermaid [0-9]+$/ })
+      .last()
+      .fill("flowchart LR\nA --> B");
+    await expect(
+      b.getByRole("img", { name: "Diagrama Mermaid" }),
+    ).toBeVisible();
     await a.getByText("Versões, revisão e publicação", { exact: true }).click();
     await a.getByRole("button", { name: "Carregar versões" }).click();
     await a
