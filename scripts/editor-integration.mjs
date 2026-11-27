@@ -677,6 +677,36 @@ try {
       ) === "0",
     "revoked source derivatives survived",
   );
+  for (const provider of ["gitlab", "bitbucket"]) {
+    const source = await request("POST", "/ingestion/sources", {
+      spaceId: ingestSpace.id,
+      title: "Fixture " + provider,
+    });
+    const control = "/ingestion/sources/" + source.id;
+    await request("PUT", control + "/connection", { provider, webhookSecret });
+    const nativeId = randomUUID();
+    const proof =
+      provider === "gitlab"
+        ? { "Idempotency-Key": nativeId, "X-Gitlab-Token": webhookSecret }
+        : {
+            "X-Request-UUID": "{" + nativeId + "}",
+            "X-Hub-Signature":
+              "sha256=" +
+              createHmac("sha256", webhookSecret).update(content).digest("hex"),
+          };
+    const url = base + "/v1/ingestion/hooks/" + tenant + "/" + source.id;
+    const deliver = (headers) =>
+      fetch(url, {
+        method: "POST",
+        body: content,
+        headers: { "Content-Type": "application/json", ...headers },
+        signal: AbortSignal.timeout(6000),
+      });
+    assert.equal((await deliver({})).status, 401);
+    assert.equal((await deliver(proof)).status, 200);
+    assert.equal((await deliver(proof)).status, 200);
+    assert.equal((await request("GET", control + "/signals")).length, 1);
+  }
   const managed = await request("POST", "/ingestion/sources", {
     spaceId: ingestSpace.id,
     title: "Fixture credencial",
@@ -936,6 +966,7 @@ try {
       "withdrawal",
       "source-cursor",
       "signed-webhook-replay-rotation-revocation",
+      "gitlab-bitbucket-native-hook",
       "scoped-credential-rotation",
       "native-acl-intersection",
     ],

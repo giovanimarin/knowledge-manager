@@ -10,7 +10,7 @@ import {
   unseal,
 } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
-import { hookPurpose } from "./hooks.js";
+import { hookPurpose, nativeHookProviders } from "./hooks.js";
 
 type Principal = { remote: string; member: string };
 
@@ -110,7 +110,11 @@ export async function manageConnection(
       throw new IdentityError(400);
     const secret =
       body.webhookSecret == null ? null : string(body.webhookSecret, 1024);
-    if (provider === "github" ? !secret || secret.length < 32 : secret !== null)
+    if (
+      nativeHookProviders.has(provider)
+        ? !secret || secret.length < 32
+        : secret !== null
+    )
       throw new IdentityError(400);
     const encrypted =
       secret && (await seal(secret, hookPurpose(store.tenant, source)));

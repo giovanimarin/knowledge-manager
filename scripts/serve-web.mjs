@@ -34,7 +34,15 @@ const server = createServer(async (request, response) => {
       }
       const headers = {};
       const headerNames = /^\/v1\/ingestion\/hooks\//.test(request.url)
-        ? ["content-type", "x-hub-signature-256", "x-github-delivery"]
+        ? [
+            "content-type",
+            "x-hub-signature-256",
+            "x-github-delivery",
+            "x-gitlab-token",
+            "idempotency-key",
+            "x-hub-signature",
+            "x-request-uuid",
+          ]
         : ["authorization", "content-type"];
       for (const name of headerNames) {
         const value = request.headers[name];

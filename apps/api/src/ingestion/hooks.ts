@@ -6,6 +6,56 @@ import { IdentityError, unseal } from "../identity/security.js";
 export const hookPurpose = (tenant: string, source: string) =>
   `ingestion-webhook-v1:${tenant}:${source}`;
 
+export const nativeHookProviders = new Set(["github", "gitlab", "bitbucket"]);
+
+function nativeDelivery(
+  provider: string,
+  headers: IncomingHttpHeaders,
+  body: Buffer,
+  secret: string,
+) {
+  const gitlab = provider === "gitlab";
+  const github = provider === "github";
+  const delivered =
+    headers[
+      github
+        ? "x-github-delivery"
+        : gitlab
+          ? "idempotency-key"
+          : "x-request-uuid"
+    ];
+  const delivery =
+    typeof delivered === "string"
+      ? delivered.replace(/^\{([a-f0-9-]+)\}$/i, "$1").toLowerCase()
+      : "";
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+      delivery,
+    )
+  )
+    throw new IdentityError(401);
+  const signature =
+    headers[
+      github
+        ? "x-hub-signature-256"
+        : gitlab
+          ? "x-gitlab-token"
+          : "x-hub-signature"
+    ];
+  if (typeof signature !== "string") throw new IdentityError(401);
+  if (gitlab) {
+    const hash = (value: string) => createHash("sha256").update(value).digest();
+    if (!timingSafeEqual(hash(secret), hash(signature)))
+      throw new IdentityError(401);
+  } else {
+    if (!/^sha256=[0-9a-f]{64}$/.test(signature)) throw new IdentityError(401);
+    const expected = createHmac("sha256", secret).update(body).digest();
+    if (!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex")))
+      throw new IdentityError(401);
+  }
+  return delivery;
+}
+
 export async function acceptHook(
   tx: TenantTransaction,
   tenant: string,
@@ -24,25 +74,17 @@ export async function acceptHook(
     join km.wiki_spaces w on (w.tenant_id,w.id)=(s.tenant_id,s.space_id) and w.deleted_batch is null
     where s.id=${source} and s.revoked_at is null for share of s`.execute(tx)
   ).rows[0];
-  if (connection?.provider !== "github" || !connection.webhook_secret)
-    throw new IdentityError(404);
-  const signature = headers["x-hub-signature-256"];
-  const delivery = headers["x-github-delivery"];
   if (
-    typeof signature !== "string" ||
-    !/^sha256=[0-9a-f]{64}$/.test(signature) ||
-    typeof delivery !== "string" ||
-    !/^[0-9a-f-]{36}$/i.test(delivery)
+    !connection?.webhook_secret ||
+    !nativeHookProviders.has(connection.provider)
   )
-    throw new IdentityError(401);
+    throw new IdentityError(404);
   const secret = await unseal(
     connection.webhook_secret,
     hookPurpose(tenant, source),
   );
+  const delivery = nativeDelivery(connection.provider, headers, raw, secret);
   const digest = createHash("sha256").update(raw).digest("hex");
-  const expected = createHmac("sha256", secret).update(raw).digest();
-  if (!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex")))
-    throw new IdentityError(401);
   const remembered =
     await sql`insert into km.ingest_signals(tenant_id,source_id,credential_version,delivery,digest)
     values(${tenant},${source},${connection.credential_version},${delivery},${digest})
