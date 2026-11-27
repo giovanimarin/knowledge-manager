@@ -8,3 +8,5 @@
 | DM-11 · RF-02/03 · U3 | Política por espaço, solicitação congelada com responsáveis, decisão por aprovador e publicação. Arquivamento, vencimento e revisão periódica. | Editor sem permissão não publica. Alteração posterior não muda o snapshot aprovado. Rascunho não substitui publicação anterior. Evento sai da mesma transação da publicação. |
 
 Requisições mutáveis do ciclo de vida exigem CAS por revisão. Um update repetido usa o mesmo recibo. O documento tem um tenant e uma árvore efetiva de permissões C1. O canal web não concede autorização adicional. C4/PKG-05 consome eventos de publicação e retirada com os IDs de página e versão. Nenhum rascunho é enviado ao índice.
+
+As formas dos frames constam no [contrato do protocolo](../../contracts/editor.protocol.json). O [runbook](PKG-04-runbook.md) descreve a operação, o processamento de retenção e as evidências G3.

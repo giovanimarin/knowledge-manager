@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 const require = createRequire(
   new URL("../apps/api/package.json", import.meta.url),
@@ -13,6 +13,10 @@ const { tenant, adminA, adminB, adminMemberA, accessC } = JSON.parse(
   readFileSync(identity, "utf8"),
 );
 const { root, email, password } = JSON.parse(readFileSync(browser, "utf8"));
+const protocol = JSON.parse(
+  readFileSync(new URL("../contracts/editor.protocol.json", import.meta.url)),
+);
+const durations = {};
 const base = process.env.KM_BASE_URL;
 const db = (query) =>
   execFileSync(
@@ -106,6 +110,10 @@ try {
   assert.equal(denied.frames.length, 0);
   const syncA = await frame(a, (x) => x.type === "sync");
   const syncB = await frame(b, (x) => x.type === "sync");
+  assert.deepEqual(
+    Object.keys(syncA).sort(),
+    protocol.serverFrames.sync.slice().sort(),
+  );
   const d1 = new Y.Doc(),
     d2 = new Y.Doc();
   Y.applyUpdate(d1, Buffer.from(syncA.snapshot, "base64"));
@@ -138,6 +146,7 @@ try {
       },
     };
   });
+  let started = performance.now();
   for (const { client, packet } of updates)
     client.ws.send(JSON.stringify(packet));
   const receipts = await Promise.all(
@@ -148,6 +157,12 @@ try {
       ),
     ),
   );
+  durations.concurrentAcksMs = Math.round(performance.now() - started);
+  for (const receipt of receipts)
+    assert.deepEqual(
+      Object.keys(receipt).sort(),
+      protocol.serverFrames.ack.slice().sort(),
+    );
   const high = Math.max(...receipts.map((x) => x.sequence));
   for (const client of [a, b]) {
     const snapshot = await frame(
@@ -174,19 +189,23 @@ try {
   );
   b.ws.close();
   await b.closed;
+  started = performance.now();
   const reopened = await connect(reader.accessToken);
   assert.equal(
     (await frame(reopened, (x) => x.type === "sync")).sequence,
     high,
   );
+  durations.reconnectMs = Math.round(performance.now() - started);
   const deny = randomUUID(),
     role = randomUUID();
   db(`insert into km.identity_roles(tenant_id,id,name,actions) values ('${tenant}','${role}','Editor proof',array['content.read','content.edit']);
   insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values ('${tenant}','${deny}','${role}','${actor.id}','${root}','deny')`);
+  started = performance.now();
   reopened.ws.send(
     JSON.stringify({ ...updates[1].packet, operationId: randomUUID() }),
   );
   assert.equal(await reopened.closed, 4403);
+  durations.revocationMs = Math.round(performance.now() - started);
   await request(
     "GET",
     "/editor/pages/" + root + "/versions",
@@ -340,6 +359,7 @@ try {
       ["compose", "--env-file", process.env.KM_ENV_FILE, ...args],
       { stdio: "inherit" },
     );
+  started = performance.now();
   compose("restart", "api");
   compose("up", "-d", "--wait", "--no-build", "api");
   const afterRestart = await connect(adminA);
@@ -351,6 +371,29 @@ try {
   } finally {
     afterRestart.ws.close();
   }
+  durations.restartAndSyncMs = Math.round(performance.now() - started);
+  if (process.env.KM_EDITOR_G3_REPORT)
+    writeFileSync(
+      process.env.KM_EDITOR_G3_REPORT,
+      JSON.stringify(
+        {
+          clients: 2,
+          durations,
+          checks: [
+            "converged",
+            "deduplication",
+            "reconnect",
+            "revocation",
+            "restart",
+            "approval",
+            "expiry",
+          ],
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+  console.log("Editor métricas " + JSON.stringify(durations));
   console.log(
     "Editor G3: dois clientes reais, CRDT, presença/cursor, replay, reconexão, revogação, versões e publicação imutável",
   );
