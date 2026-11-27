@@ -1,12 +1,12 @@
 # Acompanhamento do projeto
 
-Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 1/18 pacotes aceitos. PKG-01 concluído; PKG-02 próximo.
+Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 1/18 pacotes aceitos. PKG-01 concluído; PKG-02 em validação no PR #8.
 
 ## Método
 Atualizar em cada PR: pacote, marco, tarefa/subtarefa, estado (pendente, em execução, bloqueado, em validação, concluído), evidência por commit/teste, pendências e próximo passo. Não inferir progresso de código escrito. Concluído exige evidência e aceite aplicável. Percentual do pacote ponderado por marcos e fração de subtarefas verificadas; pesos iniciais PKG-01 22/28/28/22, revisáveis explicitamente. Percentual global de pacotes aceitos separado de esforço ponderado e de prontidão comercial. Gates sandbox/produção pendentes não contam como comprovados. Registrar tempo real quando disponível, sem inventar horas. Manter roadmap e escopo normativo intactos.
 
 ## Pacotes
-PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 autorizado para início; PKG-03,04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
+PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 em validação; PKG-03,04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
 
 ## PKG-01 — acompanhamento de implementação
 
@@ -90,3 +90,20 @@ Estimativa de 128–208 h, conforme roadmap. Os pesos totalizam 100%. A fração
 | I4 Topologias e qualidade | 20% | 26–42 h | I4.1 C dedicado e shared A/B; I4.2 escala API/worker com leases e quotas; I4.3 testes HTTP/DB/UI e regressão PKG-01; I4.4 auditorias, runbook e aceite | Evidência de ambientes reais locais, três checks, negativas entre stacks e teste concorrente. |
 
 Federação externa, vínculos de canal, aplicação das ACLs aos dados de cada domínio, console de control plane completo e migração operacional permanecem nas fronteiras aprovadas dos pacotes responsáveis. [Mapa de decisão](specification/traceability.md) · [Contratos PKG-02](packages/PKG-02-contracts.md).
+
+
+## PKG-02 — execução e evidências
+
+O plano foi registrado no commit `636adc5`, antes da implementação. O [PR #8](https://github.com/giovanimarin/knowledge-manager/pull/8) inclui o encerramento documental do PKG-01 que está no PR #7. Os três checks do PR #7 passaram na [execução 45924055966](https://github.com/giovanimarin/knowledge-manager/actions/runs/45924055966). O aceite do PKG-02 é separado do aceite já registrado do PKG-01.
+
+| Marco | Subtarefas verificadas | Evidência e pendências |
+| --- | --- | --- |
+| I1 | I1.1–I1.4 | Contratos OpenAPI e Problem Details, RLS/DDL com papel de runtime, FKs compostas, auditoria e revogação. Implementação `f83a8f9`; suspensão de identidade após restauro e rollback independente `1cbb5ec`. |
+| I2 | I2.1–I2.4 | Bootstrap, convites, senhas Argon2id, limites, MFA e códigos de recuperação, rotatividade e reuso, revogação ativa e troca de empresa. [Roteiro de operação](packages/PKG-02-runbook.md). |
+| I3 | I3.1–I3.4 | Papéis e grupos, herança, negação prioritária, administração sem privilégio implícito de conteúdo, chaves de API e delegação testadas com tokens e banco reais. Reforços `7f2d251`. |
+| I4 | I4.1 e I4.3 | Shared A/B e dedicado C, bloqueio entre stacks, regressão de inicialização limpa, falhas do banco e Redis, backup, restore e migrações; instalação dedicada de organização única em `62e9fea` e saída estruturada em `e11db06`. |
+| I4 | I4.2 e I4.4 em validação | A suíte testa duas réplicas de API/worker, idempotência do recibo do worker BullMQ e quota concorrente de autenticação. Lease e quota por tenant no processamento do worker ainda carecem de evidência direta. Aceite final e revisão do PR pendentes. |
+
+Validação ponderada registrada **90%** (I1 4/4, I2 4/4, I3 4/4, I4 2/4). Pacotes aceitos **1/18**. A primeira rodada integrada passou pelos três checks em `f83a8f9`. O replay de prova de MFA, o bloqueio após restore e o provisionamento dedicado foram refinados nas rodadas seguintes. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45925880256) · [Execução do código após os refinamentos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45926503444).
+
+A tentativa de repetir toda a instalação no runner local foi interrompida por falta de espaço no armazenamento Docker. A validação Compose completa segue no GitHub Actions, em instalações descartáveis. Gates de sandbox e rollout continuam vinculados aos pacotes definidos no roadmap.
