@@ -1,0 +1,17 @@
+packages:
+  - apps/*
+  - packages/*
+injectWorkspacePackages: true
+syncInjectedDepsAfterScripts:
+  - build
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: false
+  protobufjs: false
+minimumReleaseAgeExclude:
+  - vite@8.4.0
+  - "@nestjs/common@12.6.3"
+  - "@nestjs/core@12.6.3"
+  - "@nestjs/platform-express@12.6.3"
+overrides:
+  protobufjs: 8.8.1

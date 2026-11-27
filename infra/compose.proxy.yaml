@@ -1,0 +1,13 @@
+services:
+  api:
+    build:
+      secrets: [build_ca]
+  web:
+    build:
+      secrets: [build_ca]
+  db:
+    build:
+      secrets: [build_ca]
+secrets:
+  build_ca:
+    file: ${KM_BUILD_CA:?Provide a trusted CA bundle}

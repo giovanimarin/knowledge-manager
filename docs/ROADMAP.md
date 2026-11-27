@@ -1,6 +1,6 @@
 # Roadmap e sequência de PRs
 
-PKG-00B aguarda revisão final. PKG-01 começa somente após aceite da especificação ou autorização explícita. A primeira versão (V1) inclui todos os gates abaixo. PKG-07 é um marco testável de chat web, anterior à V1 comercial omnichannel. Horas são faixas preliminares de engenharia, incluindo testes e revisão, sem custo de serviços, filas de aprovação ou prazo de credenciais. Reestimar por integração após spikes e capacidade confirmada.
+PKG-00B aceito em `63a0a98`. PKG-01 está em validação. [Acompanhamento de gates e evidências](PROGRESS.md). A primeira versão (V1) inclui todos os gates abaixo. PKG-07 é um marco testável de chat web, anterior à V1 comercial omnichannel. Horas são faixas preliminares de engenharia, incluindo testes e revisão, sem custo de serviços, filas de aprovação ou prazo de credenciais. Reestimar por integração após spikes e capacidade confirmada.
 
 | Pacote / PRs por fronteira | Entrega | Dependências | Gate | Horas |
 | --- | --- | --- | --- | --- |

@@ -1,0 +1,27 @@
+{
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "name": "@km/foundation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "kysely": "0.29.9",
+    "pg": "8.23.1",
+    "ioredis": "5.9.3",
+    "bullmq": "5.79.2",
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/sdk-trace-node": "2.8.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.219.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

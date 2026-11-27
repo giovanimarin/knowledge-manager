@@ -1,0 +1,119 @@
+x-app: &app
+  image: ${COMPOSE_PROJECT_NAME:-knowledge-manager}-runtime:0.1.0
+  environment: &app-env
+    PGHOST: db
+    PGDATABASE: km
+    PGUSER: km_app
+    PGPASSWORD: ${KM_APP_PASSWORD:?Execute make setup}
+    REDIS_HOST: redis
+    STORAGE_PATH: /var/lib/km
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+  volumes:
+    - storage:/var/lib/km
+  init: true
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  healthcheck: &health
+    test:
+      [
+        CMD,
+        node,
+        -e,
+        'fetch("http://127.0.0.1:3000/readyz").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
+      ]
+    interval: 3s
+    timeout: 3s
+    retries: 15
+
+services:
+  db:
+    image: ${COMPOSE_PROJECT_NAME:-knowledge-manager}-db:0.1.0
+    build:
+      context: .
+      target: database
+    environment:
+      POSTGRES_DB: km
+      POSTGRES_USER: km_bootstrap
+      POSTGRES_PASSWORD: ${KM_DB_PASSWORD:?Execute make setup}
+      KM_APP_PASSWORD: ${KM_APP_PASSWORD:?Execute make setup}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, km_bootstrap, -d, km]
+      interval: 2s
+      timeout: 3s
+      retries: 25
+
+  redis:
+    image: redis:8.2-alpine@sha256:da23c2478319ceb4903857d77a2fd7aa5137d9e9d4c8165dafbacedac6403e95
+    command: [redis-server, --appendonly, "yes", --maxmemory-policy, noeviction]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  api:
+    <<: *app
+    build:
+      context: .
+      target: runtime
+
+  worker:
+    <<: *app
+    command: [node, worker/dist/main.js]
+    healthcheck:
+      <<: *health
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'fetch("http://127.0.0.1:3001/readyz").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
+        ]
+
+  web:
+    image: ${COMPOSE_PROJECT_NAME:-knowledge-manager}-web:0.1.0
+    build:
+      context: .
+      target: web
+    init: true
+    read_only: true
+    networks: [default, ingress]
+    ports:
+      - "127.0.0.1:${KM_WEB_PORT:-3000}:8080"
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'fetch("http://127.0.0.1:8080/").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+networks:
+  default:
+    internal: true
+  ingress:
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+
+volumes:
+  postgres:
+  redis:
+  storage:
