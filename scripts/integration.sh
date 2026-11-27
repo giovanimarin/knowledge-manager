@@ -76,10 +76,18 @@ make stop
 
 use_project restored
 make restore DIR="$scratch/backup"
+node scripts/identity-integration.mjs restored "$scratch/identity"
 db -Atc 'TABLE km.migrations; SELECT * FROM km.fixture_objects ORDER BY tenant_id, id; SELECT id FROM km.probe_receipts ORDER BY id' > "$scratch/actual"
 diff -u "$scratch/expected" "$scratch/actual"
 echo "Checksum de migração, vínculos, objetos e recibos conferidos após restore"
 make smoke
+compose stop web worker api
+db -f /km-infra/v2-down.sql
+[[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=1")" == 1 ]]
+[[ "$(db -Atc "SELECT count(*) FROM km.fixture_objects")" -gt 0 ]]
+make setup
+[[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=2")" == 1 ]]
+echo "Upgrade e rollback v2 verificados preservando os fixtures do PKG-01"
 compose stop web worker api
 db -f /km-infra/rollback.sql
 [[ "$(db -Atc "SELECT to_regnamespace('km') IS NULL")" == t ]]

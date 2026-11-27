@@ -138,6 +138,7 @@ restore() {
   storage restore < "$dir/storage.json"
   compose exec -T db pg_restore --exit-on-error --single-transaction -U km_bootstrap -d km < "$dir/database.dump"
   migrate
+  db -f /km-infra/restore-identity.sql
   verify_fixture
   storage complete-restore
   compose up -d --wait --no-build api worker web

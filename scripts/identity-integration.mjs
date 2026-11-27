@@ -350,7 +350,15 @@ async function dedicated() {
 
 if (mode === "primary") await primary();
 else if (mode === "dedicated") await dedicated();
-else if (mode === "cross") {
+else if (mode === "restored") {
+  const data = JSON.parse(readFileSync(file, "utf8"));
+  await request("GET", "/me", { token: data.adminA, status: 401 });
+  await request("POST", "/sessions", {
+    status: 401,
+    body: { orgHint: data.tenant, email: data.email, password: data.secret },
+  });
+  console.log("Restore fechado para identidades e sessões do snapshot");
+} else if (mode === "cross") {
   const data = JSON.parse(readFileSync(file, "utf8"));
   await request("GET", "/me", { token: data.accessC, status: 401 });
 } else {
