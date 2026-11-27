@@ -85,7 +85,7 @@ curl --noproxy '*' -fsS "http://127.0.0.1:$embed_port/api/tags" | node -e '
 let body = "";
 process.stdin.setEncoding("utf8").on("data", value => body += value).on("end", () => {
   const model = JSON.parse(body).models.find(entry => entry.name === "bge-m3:latest");
-  if (!model?.digest?.startsWith("790764642607")) process.exit(1);
+  if (model?.digest !== "7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab") process.exit(1);
   console.log("Modelo bge-m3 " + model.digest);
 });
 ' | tee "$artifacts/embedding-digest.log"

@@ -232,7 +232,7 @@ Estimativa de 184–320 h do roadmap. Cada marco distribui seu peso igualmente e
 
 ### Implementação e evidências do PKG-05
 
-**Validação ponderada de 70% em 12/16 subtarefas.** O PR #14 permanece em rascunho. Os pesos medem critérios já comprovados. As pendências abaixo continuam no escopo do pacote.
+**Rodada anterior à revisão técnica. Validação ponderada de 70% em 12/16 subtarefas.** Os pesos medem os critérios comprovados na rodada registrada abaixo.
 
 | Marco      | Aceite comprovado | Evidências e pendências                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -244,3 +244,20 @@ Estimativa de 184–320 h do roadmap. Cada marco distribui seu peso igualmente e
 No head `66acc73`, passaram **3/3 checks obrigatórios**. O verify local executou **27 testes em 6,07 s**, sem falhas ou omissões. O smoke registrou **5.574 ms** para recuperar a ingestão no cenário de retry/reinício, **15 segmentos ativos** e **quatro pedidos simultâneos de reprocessamento**. O Tesseract **5.5.0** executou a fixture via socket privado. Os seis cenários Playwright passaram em **6,6 s** e o backup concluiu em **11 s**. O clean smoke também verificou restauração e rejeição de backup incompleto. As métricas descrevem o ambiente descartável do CI. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119) · [Smoke e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119/artifacts/15223533674) · [Auditoria e SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119/artifacts/15225015020)
 
 O ensaio anterior expôs uma fixture de lixeira ambígua e uma dependência nativa com vulnerabilidade crítica na imagem. A fixture de ingestão passou para um espaço próprio. A auditoria permaneceu obrigatória. Mermaid e KaTeX foram atualizados, e o Tesseract passou a rodar sob um processo local separado. [Runbook](packages/PKG-05-runbook.md)
+
+### Resposta à revisão técnica do PR #14
+
+**85% ponderado e 14/16 subtarefas com evidência de aceite local.** N1 30/30, N2 30/30, N3 15/30, N4 10/10. O PR permanece em rascunho com N3.3 e N3.4 abertas. O registro de fechamento do PKG-04 vem da main em `9864958f`, integrado à branch do PR por `e745b15`.
+
+| Subtarefa | Estado | Implementação e evidência |
+| --- | --- | --- |
+| N2.1 | Aceite local comprovado | `ebc299d` e `6f33edb`. O smoke conferiu OCR em PDF de imagem e texto/células/slides de DOC/XLS/PPT gerados a partir de fixtures sintéticas. Conversor e OCR ficam em processo separado. Arquivos malformados foram recusados. `599fa14` acrescentou OCR por página e fixture mista. |
+| N2.4 | Aceite local comprovado | `11ff0f2`, `5ab9528`, `6f33edb`. BGE-M3 no Ollama em CPU, 1.024 dimensões, vetores gravados em pgvector. Concorrência da configuração, troca atômica e preservação do perfil anterior após incompatibilidade foram exercitadas. Os provedores autenticados aprovados permanecem na matriz normativa. |
+| N3.3 | Em validação | `1e3c627` e `e25e072`. Rotação e revogação de credenciais cifradas vinculadas a um agente C1. Drive e Graph têm adaptadores de ACL com interseção no servidor. A cobertura equivalente de ACL dos demais provedores e os ensaios G4 continuam abertos. |
+| N3.4 | Em validação | `8bee6d7`, `5ab9528`, `adbb854`, `599fa14`. Checkpoints nativos do Drive e do Graph, exclusão prioritária, confirmação de sinais e webhooks de GitHub/GitLab/Bitbucket. Permanecem abertos os webhooks nativos fora do Git e os fluxos nativos específicos dos outros provedores. |
+
+**G1/G3 comprovados na rodada `6f33edb`.** Os três checks passaram. O smoke aprovou seis cenários Playwright em **5,7 s** e rodou as regressões PKG-01 a PKG-04. Recuperação da ingestão em **6.541 ms**, **19 segmentos** e **quatro pedidos concorrentes**. Backup em **9 s**, restauração em **13 s**. O BGE-M3 (digest `7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab`) produziu similaridade **0,8681** para a paráfrase pt/en e **0,2950** para o texto distinto em **1.920 ms**. Valores medidos em fixtures descartáveis. [Checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46053774259) · [Smoke, G3 e modelo](https://github.com/giovanimarin/knowledge-manager/actions/runs/46053774259/artifacts/15226450347) · [Auditoria/SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/46053774259/artifacts/15224439965)
+
+A rodada `8bee6d7` detectou descarte dos cabeçalhos de assinatura pelo proxy. A correção encaminha a prova apenas nas rotas de webhook. O verify local do código `599fa14` executou **30 testes em 6,08 s**, sem falhas ou omissões, incluindo recuperação de cursor após falha de leitura.
+
+**G4 autenticado pendente.** Fixtures de protocolo e credenciais sintéticas cobrem as operações locais identificadas no runbook. Nenhuma conta autenticada de provedor foi usada nesta rodada. [Contratos](packages/PKG-05-contracts.md) · [Runbook e matriz por provedor](packages/PKG-05-runbook.md)
