@@ -47,6 +47,17 @@ test("wiki Word round trip preserves Portuguese text and declares layout loss", 
   );
   assert.ok(result.extraLosses.includes("rich-layout"));
 });
+test("wiki PDF round trip preserves Portuguese text in the bounded worker", async () => {
+  const result = await exportFiles("pdf", [root]);
+  const imported = await importItem("pdf", {
+    title: root.title,
+    data: result.output[0].data,
+  });
+  assert.match(imported.content, /Ação rápida/);
+  assert.match(imported.content, /Segunda linha com café/);
+  assert.ok(result.extraLosses.includes("rich-layout"));
+});
+
 test("wiki imports sanitized HTML and ZIP exports preserve hierarchy", async () => {
   const html = await importItem("html", {
     title: fixture.title,
@@ -68,6 +79,11 @@ test("wiki supports Confluence and Notion local exports and rejects archive trav
   const notion = await importArchive("notion", pack(fixture.notion));
   assert.match(conf[0].content, /Versão aprovada/);
   assert.equal(notion[1].parentIndex, 0);
+  assert.equal(notion[0].links[0].target, "Wiki/Manual.md");
+  assert.equal(
+    Buffer.from(notion[1].files[0].data, "base64").toString(),
+    "Anexo em português.",
+  );
   await assert.rejects(
     importArchive("zip", pack({ "../escaped.md": "invalid" })),
     { status: 400 },

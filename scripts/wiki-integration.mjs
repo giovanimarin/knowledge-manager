@@ -251,6 +251,22 @@ await request(
   adminB,
   404,
 );
+const large = await request("POST", attachmentPath, {
+  ...upload,
+  data: Buffer.alloc(130000, 97).toString("base64"),
+});
+assert.equal(large.scanState, "clean");
+await request("DELETE", attachmentPath + "/" + large.id);
+const quotaId = randomUUID();
+db(`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,object_size,sha256)
+ values ('${tenant}','${root.id}','${quotaId}','quota.txt','text/plain',52428800,repeat('0',64))`);
+try {
+  await request("POST", attachmentPath, upload, adminA, 429);
+} finally {
+  db(
+    `delete from km.wiki_attachments where tenant_id='${tenant}' and id='${quotaId}'`,
+  );
+}
 const malicious = await request("POST", attachmentPath, {
   ...upload,
   data: Buffer.from("KM-WIKI-LOCAL-SIGNATURE").toString("base64"),
@@ -385,7 +401,23 @@ for (const format of ["confluence", "notion"]) {
     data: Buffer.from(archive).toString("base64"),
   });
   const receipt = await request("GET", "/import-jobs/" + job.id);
-  assert.equal(receipt.items.length, Object.keys(fidelity[format]).length);
+  assert.equal(
+    receipt.items.length,
+    Object.keys(fidelity[format]).filter((path) => /\.(md|html)$/i.test(path))
+      .length,
+  );
+  if (format === "notion") {
+    const links = await request(
+      "GET",
+      "/pages/" + receipt.items[0].id + "/relations",
+    );
+    assert.equal(links[0].target_id, receipt.items[1].id);
+    const files = await request(
+      "GET",
+      "/pages/" + receipt.items[1].id + "/attachments",
+    );
+    assert.equal(files[0].scan_state, "clean");
+  }
   assert.ok(receipt.manifest.losses.includes("remote-identity-and-acl"));
 }
 const checklist = await request(
@@ -503,6 +535,24 @@ await request(
   adminA,
   404,
 );
+const storageCheck = execFileSync(
+  "docker",
+  [
+    "compose",
+    "--env-file",
+    process.env.KM_ENV_FILE,
+    "exec",
+    "-T",
+    "api",
+    "node",
+    "-e",
+    "const fs=require('node:fs'); process.stdout.write(String(fs.existsSync('/var/lib/km/objects/'+process.argv[1]+'/'+process.argv[2])))",
+    tenant,
+    expiredFile.id,
+  ],
+  { encoding: "utf8" },
+).trim();
+assert.equal(storageCheck, "false");
 console.log(
   "Wiki retenção: subárvore e bytes restaurados, janela vencida e purga terminal auditada",
 );
