@@ -33,12 +33,20 @@ async function boundedBody(response) {
   return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(parts));
 }
 
+export class CloudSourceStatus extends Error {
+  constructor(status) {
+    super("Cloud source unavailable: " + status);
+    this.status = status;
+  }
+}
+
 export async function cloudSource({
   provider,
   container,
   origin = defaults[provider],
   credential,
   nativeCursor,
+  trackNativeCursor = false,
   principalIds = [],
   request = fetch,
 }) {
@@ -65,7 +73,8 @@ export async function cloudSource({
     upstream.hash
   )
     throw new Error("Invalid upstream origin");
-  const delta = !!nativeCursor && ["sharepoint", "onedrive"].includes(provider);
+  const delta =
+    !!nativeCursor && ["drive", "sharepoint", "onedrive"].includes(provider);
   const removed = new Set();
   const files = [],
     body = new Map();
@@ -113,8 +122,7 @@ export async function cloudSource({
       redirect: "error",
       signal: AbortSignal.timeout(12000),
     });
-    if (!result.ok)
-      throw new Error("Cloud source unavailable: " + result.status);
+    if (!result.ok) throw new CloudSourceStatus(result.status);
     const source = await boundedBody(result);
     return json ? JSON.parse(source) : source;
   }
@@ -124,7 +132,77 @@ export async function cloudSource({
     visited.add(value);
   }
 
-  if (provider === "drive" || provider === "gcs") {
+  function rememberDrive(file) {
+    const key = validString(file.id),
+      name = validString(file.name);
+    const docs = file.mimeType === "application/vnd.google-apps.document";
+    if (!docs && !plainFile.test(name)) return false;
+    const locator = "/drive/v3/files/" + encodeURIComponent(key);
+    remember(
+      key,
+      validString(file.version ?? file.modifiedTime),
+      name,
+      docs ? locator + "/export?mimeType=text%2Fplain" : locator + "?alt=media",
+    );
+    return true;
+  }
+
+  function driveShared(query) {
+    if (container !== "all") {
+      query.set("driveId", container);
+      query.set("supportsAllDrives", "true");
+      query.set("includeItemsFromAllDrives", "true");
+    }
+    return query;
+  }
+
+  if (provider === "drive" && delta) {
+    let token = nativeCursor;
+    const changes = new Map();
+    do {
+      cursor(token);
+      const query = driveShared(
+        new URLSearchParams({
+          pageToken: token,
+          includeRemoved: "true",
+          pageSize: "100",
+          fields:
+            "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,version,modifiedTime,mimeType,trashed))",
+        }),
+      );
+      const result = await get("/drive/v3/changes?" + query);
+      if (!Array.isArray(result.changes))
+        throw new Error("Incomplete Drive changes");
+      for (const change of result.changes) {
+        const key = validString(change.fileId);
+        if (changes.size >= 150 && !changes.has(key))
+          throw new Error("Drive change inventory exceeds bounds");
+        changes.set(key, change);
+      }
+      checkpoint = result.newStartPageToken ?? checkpoint;
+      token = result.nextPageToken ?? "";
+    } while (token);
+    if (!checkpoint) throw new Error("Drive changes have no final token");
+    for (const [key, change] of changes)
+      if (
+        change.removed ||
+        change.file?.trashed ||
+        !change.file ||
+        change.file.id !== key ||
+        !rememberDrive(change.file)
+      )
+        removed.add(key);
+  } else if (provider === "drive" || provider === "gcs") {
+    if (provider === "drive" && trackNativeCursor) {
+      const query = new URLSearchParams();
+      if (container !== "all") {
+        query.set("driveId", container);
+        query.set("supportsAllDrives", "true");
+      }
+      checkpoint = validString(
+        (await get("/drive/v3/changes/startPageToken?" + query)).startPageToken,
+      );
+    }
     let token = "";
     do {
       cursor(token);
@@ -144,22 +222,7 @@ export async function cloudSource({
         const result = await get("/drive/v3/files?" + query);
         if (!Array.isArray(result.files) || result.incompleteSearch)
           throw new Error("Incomplete Drive inventory");
-        for (const file of result.files) {
-          const key = validString(file.id),
-            name = validString(file.name);
-          const docs = file.mimeType === "application/vnd.google-apps.document";
-          if (docs || plainFile.test(name))
-            remember(
-              key,
-              validString(file.version ?? file.modifiedTime),
-              name,
-              docs
-                ? "/drive/v3/files/" +
-                    encodeURIComponent(key) +
-                    "/export?mimeType=text%2Fplain"
-                : "/drive/v3/files/" + encodeURIComponent(key) + "?alt=media",
-            );
-        }
+        for (const file of result.files) rememberDrive(file);
         token = result.nextPageToken ?? "";
       } else {
         const query = new URLSearchParams({ maxResults: "100" });

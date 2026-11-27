@@ -194,3 +194,41 @@ test("Graph delta resumes exact source, keeps tombstones and fails closed on nat
     /outside source/,
   );
 });
+
+test("Drive applies an ordered change feed and persists the native watermark", async () => {
+  const cursor = "drive-old";
+  const requests = [];
+  const resumed = await cloudSource({
+    provider: "drive",
+    container: "org-drive",
+    nativeCursor: cursor,
+    request: async (url) => {
+      requests.push(url.searchParams.get("pageToken"));
+      assert.equal(url.searchParams.get("driveId"), "org-drive");
+      if (requests.length === 1)
+        return Response.json({
+          changes: [
+            {
+              fileId: "gone",
+              file: { id: "gone", name: "gone.txt", version: "6" },
+            },
+          ],
+          nextPageToken: "drive-page-2",
+        });
+      return Response.json({
+        changes: [
+          { fileId: "gone", removed: true },
+          {
+            fileId: "live",
+            file: { id: "live", name: "live.txt", version: "7" },
+          },
+        ],
+        newStartPageToken: "drive-next",
+      });
+    },
+  });
+  assert.deepEqual(requests, [cursor, "drive-page-2"]);
+  assert.deepEqual(resumed.removed, ["gone"]);
+  assert.equal(resumed.files[0].remoteKey, "live");
+  assert.equal(resumed.checkpoint, "drive-next");
+});

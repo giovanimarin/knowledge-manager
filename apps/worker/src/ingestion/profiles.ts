@@ -37,10 +37,6 @@ export async function backfill(
   tenant: string,
   profile: Profile,
 ) {
-  // Shares the lock used for publication, withdrawal, deletion, and profile mutations.
-  await sql`select pg_advisory_xact_lock(71189004,hashtext(${tenant}))`.execute(
-    tx,
-  );
   const embedding = selectEmbedding(profile);
   const pending = (
     await sql<{ digest: string; content: string }>`
@@ -54,13 +50,34 @@ export async function backfill(
     order by c.digest limit 4
   `.execute(tx)
   ).rows;
+  const vectors = [];
   for (const entry of pending) {
     const vector =
       "[" + (await embedding.vector(entry.content)).join(",") + "]";
-    await sql`insert into km.ingest_vectors values(${tenant},${embedding.profile},${entry.digest},${vector}::public.vector)
-      on conflict do nothing`.execute(tx);
+    vectors.push({ digest: entry.digest, vector });
   }
+  // Source mutations are serialized only during verification and persistence.
+  await sql`select pg_advisory_xact_lock(71189004,hashtext(${tenant}))`.execute(
+    tx,
+  );
+  for (const { digest, vector } of vectors)
+    await sql`insert into km.ingest_vectors
+      select ${tenant},${embedding.profile},${digest},${vector}::public.vector
+      where exists(select from km.ingest_chunks c join km.ingest_eligible g using(tenant_id,page_id)
+        where c.digest=${digest} and (c.attachment_id is null or exists(
+          select from km.ingest_clean_files f where (f.tenant_id,f.page_id,f.publication_id,f.id)
+          =(c.tenant_id,c.page_id,g.publication_id,c.attachment_id))))
+      on conflict do nothing`.execute(tx);
   if (pending.length) return;
+  // Reconciliation removes retired or revoked data before the foreign-key checked swap.
+  await sql`delete from km.ingest_generations g where not exists(
+    select from km.ingest_eligible e where (e.tenant_id,e.page_id)=(g.tenant_id,g.page_id))`.execute(
+    tx,
+  );
+  await sql`delete from km.ingest_chunks c using km.ingest_generations g
+    where (c.tenant_id,c.page_id)=(g.tenant_id,g.page_id) and c.attachment_id is not null
+    and not exists(select from km.ingest_clean_files f where (f.tenant_id,f.page_id,f.publication_id,f.id)
+      =(c.tenant_id,c.page_id,g.publication_id,c.attachment_id))`.execute(tx);
   await sql`update km.ingest_chunks set profile=${embedding.profile}`.execute(
     tx,
   );

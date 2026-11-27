@@ -1,4 +1,4 @@
-import { cloudSource } from "./ingestion/cloud.mjs";
+import { cloudSource, CloudSourceStatus } from "./ingestion/cloud.mjs";
 import { pushSnapshot } from "./ingestion/push.mjs";
 
 const [provider, container, source] = process.argv.slice(2);
@@ -38,14 +38,27 @@ if (
   )
 )
   throw new Error("Invalid native ACL mapping");
-const snapshot = await cloudSource({
+const options = {
   provider,
   container,
   origin: KM_CLOUD_SOURCE_ORIGIN,
   credential: KM_CLOUD_SOURCE_AUTH,
   nativeCursor,
   principalIds,
-});
+  trackNativeCursor: true,
+};
+let snapshot;
+try {
+  snapshot = await cloudSource(options);
+} catch (error) {
+  if (
+    !nativeCursor ||
+    !(error instanceof CloudSourceStatus) ||
+    error.status !== 410
+  )
+    throw error;
+  snapshot = await cloudSource({ ...options, nativeCursor: null });
+}
 const records = await pushSnapshot({
   snapshot: { ...snapshot, before: nativeCursor },
   source,

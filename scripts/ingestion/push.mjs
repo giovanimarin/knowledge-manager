@@ -82,7 +82,11 @@ export async function pushSnapshot({
     });
   }
   cursor ??= null;
-  if (snapshot.delta && snapshot.before !== nativeCursor)
+  if (
+    credentialVersion &&
+    snapshot.checkpoint &&
+    (snapshot.before ?? null) !== nativeCursor
+  )
     throw new Error("Concurrent import changed the provider checkpoint");
   const checkpoint =
     credentialVersion &&
