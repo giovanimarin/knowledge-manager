@@ -390,9 +390,17 @@ try {
     "retry not recorded",
   );
   assert.deepEqual(await request("GET", ingestPath + "/chunks"), []);
+  const workerCompose = (...args) =>
+    execFileSync(
+      "docker",
+      ["compose", "--env-file", process.env.KM_ENV_FILE, ...args],
+      { stdio: "inherit" },
+    );
+  workerCompose("stop", "worker");
   db(
     "drop trigger test_ingest_retry on km.ingest_generations; drop function km.test_ingest_retry()",
   );
+  workerCompose("up", "-d", "--wait", "--no-build", "worker");
   const chunks = await untilIngest(async () => {
     const rows = await request("GET", ingestPath + "/chunks");
     return rows.length ? rows : false;
