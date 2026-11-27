@@ -9,6 +9,7 @@ type Body = Record<string, unknown>;
 type Page = {
   id: string;
   space_id: string;
+  position: number;
   parent_id: string | null;
   title: string;
   content: string;
@@ -119,6 +120,35 @@ export class Wiki {
     `.execute(this.tx)
     ).rows;
   }
+  private async insertionPosition(
+    space: string,
+    parent: string | null,
+    position: unknown,
+    moving: string | null = null,
+  ) {
+    const siblings = (
+      await sql<{
+        id: string;
+      }>`select id from km.wiki_pages where space_id=${space} and
+      parent_id is not distinct from ${parent}::uuid and deleted_batch is null and id is distinct from ${moving}::uuid
+      order by position,id`.execute(this.tx)
+    ).rows;
+    const index = position === undefined ? siblings.length : position;
+    if (
+      typeof index !== "number" ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index > siblings.length
+    )
+      throw invalid();
+    const ids = siblings.map((sibling) => sibling.id);
+    await sql`update km.wiki_pages p set position=(s.ordinal-1+case when s.ordinal>${index}::integer then 1 else 0 end)::integer
+      from unnest(${ids}::uuid[]) with ordinality as s(id,ordinal) where p.id=s.id`.execute(
+      this.tx,
+    );
+    return index;
+  }
+
   private async createPage(body: Body) {
     const space = id(body.spaceId);
     const parent = optionalId(body.parentId);
@@ -138,9 +168,10 @@ export class Wiki {
       content = body.content === undefined ? template.content : content;
       metadata = { ...template.fields, ...metadata };
     }
+    const position = await this.insertionPosition(space, parent, body.position);
     await this.resource(key, parent ?? space, level);
-    await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,title,content,tags,category,metadata,owner_id,author_id)
-      values (${this.tenant},${key},${space},${parent},${string(body.title)},${content},
+    await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,tags,category,metadata,owner_id,author_id)
+      values (${this.tenant},${key},${space},${parent},${position},${string(body.title)},${content},
       ${tags(body.tags)}::text[],${body.category == null ? null : string(body.category)},${JSON.stringify(metadata)}::jsonb,${optionalId(body.ownerId)},${this.member})`.execute(
       this.tx,
     );
@@ -209,11 +240,17 @@ export class Wiki {
       await this.require("content.acl.manage", node.id);
     }
     await this.require("content.acl.manage", parent ?? space);
+    const position = await this.insertionPosition(
+      space,
+      parent,
+      body.position,
+      duplicate ? null : root.id,
+    );
     if (!duplicate) {
       await sql`update km.wiki_pages set space_id=${space} where id=any(${tree.map((node) => node.id)}::uuid[])`.execute(
         this.tx,
       );
-      await sql`update km.wiki_pages set parent_id=${parent},revision=revision+1,updated_at=now() where id=${root.id}`.execute(
+      await sql`update km.wiki_pages set parent_id=${parent},position=${position},revision=revision+1,updated_at=now() where id=${root.id}`.execute(
         this.tx,
       );
       await sql`update km.identity_resources set parent_id=${parent ?? space} where id=${root.id}`.execute(
@@ -229,8 +266,8 @@ export class Wiki {
         node.id === root.id ? parent : copies.get(node.parent_id!)!;
       const source = await this.page(node.id);
       await this.resource(key, destination ?? space, source.classification);
-      await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,title,content,tags,category,metadata,owner_id,author_id)
-        select tenant_id,${key},${space},${destination},title,content,tags,category,metadata,owner_id,${this.member}
+      await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,tags,category,metadata,owner_id,author_id)
+        select tenant_id,${key},${space},${destination},case when id=${root.id} then ${position}::integer else position end,title,content,tags,category,metadata,owner_id,${this.member}
         from km.wiki_pages where id=${node.id}`.execute(this.tx);
     }
     return { id: copies.get(root.id) };

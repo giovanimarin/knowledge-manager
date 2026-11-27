@@ -7,6 +7,7 @@ CREATE TABLE km.wiki_spaces (
 );
 CREATE TABLE km.wiki_pages (
   tenant_id uuid NOT NULL, id uuid NOT NULL, space_id uuid NOT NULL, parent_id uuid,
+  position integer NOT NULL DEFAULT 0 CHECK(position>=0),
   title text NOT NULL, content text NOT NULL DEFAULT '', tags text[] NOT NULL DEFAULT '{}',
   category text, metadata jsonb NOT NULL DEFAULT '{}', owner_id uuid,
   author_id uuid, revision integer NOT NULL DEFAULT 1,

@@ -5,6 +5,7 @@ type Summary = {
   id: string;
   title: string;
   parent_id: string | null;
+  position: number;
   space_id: string | null;
   snippet: string | null;
 };
@@ -119,15 +120,17 @@ export function Wiki({ token }: { token: string }) {
     );
     return children.length ? (
       <ul>
-        {children.map((page) => (
-          <li key={page.id}>
-            <button onClick={() => attempt(() => open(page.id))}>
-              {page.title}
-            </button>
-            {page.snippet && <p>{page.snippet}</p>}
-            {tree(page.id)}
-          </li>
-        ))}
+        {children
+          .sort((a, b) => a.position - b.position)
+          .map((page) => (
+            <li key={page.id}>
+              <button onClick={() => attempt(() => open(page.id))}>
+                {page.title}
+              </button>
+              {page.snippet && <p>{page.snippet}</p>}
+              {tree(page.id)}
+            </li>
+          ))}
       </ul>
     ) : null;
   }
