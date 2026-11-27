@@ -337,6 +337,27 @@ const output = await request("GET", "/export-jobs/" + exported.id);
 assert.match(output.documents[0].data, /&lt;script&gt;/);
 assert.ok(output.manifest.losses.includes("attachments"));
 await request("GET", "/export-jobs/" + exported.id, undefined, adminB, 404);
+for (const format of ["word", "pdf", "zip"]) {
+  const job = await request("POST", "/export-jobs", {
+    format,
+    pageIds: [root.id],
+  });
+  const exportedFormat = await request("GET", "/export-jobs/" + job.id);
+  const data = exportedFormat.files[0].data;
+  const definition =
+    format === "zip"
+      ? { format, spaceId: other.id, data }
+      : {
+          format,
+          spaceId: other.id,
+          items: [{ title: "Round trip " + format, data }],
+        };
+  const back = await request("POST", "/import-jobs", definition);
+  const detail = await request("GET", "/import-jobs/" + back.id);
+  const restored = await request("GET", "/pages/" + detail.items[0].id);
+  assert.match(restored.content, /Access checklist/i);
+  assert.equal(detail.items[0].state, "draft");
+}
 const deny = randomUUID();
 db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
  ('${tenant}','${deny}','${role}','${adminMemberA}','${root.id}','deny')`);

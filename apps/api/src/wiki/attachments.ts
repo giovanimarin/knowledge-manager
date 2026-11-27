@@ -1,4 +1,5 @@
 import { createConnection } from "node:net";
+import { decodeFile } from "./conversions.js";
 import { IdentityError, string } from "../identity/security.js";
 
 const formats = new Map([
@@ -31,12 +32,10 @@ const matches = (bytes: Buffer, prefix: string) =>
 export function attachmentInput(body: Record<string, unknown>) {
   const filename = string(body.filename, 180);
   const type = string(body.contentType, 100);
-  const encoded = string(body.data, 80000);
-  const bytes = Buffer.from(encoded, "base64");
+  const bytes = decodeFile(body.data);
   const extension = filename.split(".").at(-1)?.toLowerCase() ?? "";
   if (
     !bytes.length ||
-    bytes.toString("base64") !== encoded ||
     /[\\/]/.test(filename) ||
     [...filename].some((char) => char.charCodeAt(0) < 32) ||
     formats.get(extension) !== type

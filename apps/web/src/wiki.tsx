@@ -419,9 +419,9 @@ export function Wiki({ token }: { token: string }) {
                   if (
                     typeof file === "string" ||
                     file.size === 0 ||
-                    file.size > 60000
+                    file.size > 8 * 1024 * 1024
                   )
-                    throw new Error("Selecione arquivos de até 60 kB cada.");
+                    throw new Error("Selecione arquivos de até 8 MiB cada.");
                   const bytes = new Uint8Array(await file.arrayBuffer());
                   const data = btoa(
                     Array.from(bytes, (byte) => String.fromCharCode(byte)).join(

@@ -1,3 +1,11 @@
+import {
+  decodeFile,
+  exportFiles,
+  formats,
+  importArchive,
+  importItem,
+  type TransferFormat,
+} from "./conversions.js";
 import { putObject, readObject, removeObject } from "./objects.js";
 import { attachmentInput, scanAttachment } from "./attachments.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -647,37 +655,53 @@ export class Wiki {
         ? this.actor.member.id
         : this.actor.service.id;
     if (method === "POST" && !leaf) {
-      const format = string(body.format);
-      if (format !== "markdown" && (kind !== "export" || format !== "html"))
+      const format = string(body.format) as TransferFormat;
+      if (
+        !formats.includes(format) ||
+        (kind === "export" && (format === "confluence" || format === "notion"))
+      )
         throw invalid();
       const keys: string[] = [];
       if (kind === "import") {
-        const items = body.items;
         const spaceId = id(body.spaceId);
+        const parent = optionalId(body.parentId);
+        await this.destination(spaceId, parent);
+        const archiveFormat =
+          format === "zip" || format === "confluence" || format === "notion";
+        if (
+          archiveFormat &&
+          (await scanAttachment(decodeFile(body.data))) !== "clean"
+        )
+          throw invalid();
+        const items = archiveFormat
+          ? await importArchive(format, body.data)
+          : body.items;
         if (!Array.isArray(items) || !items.length || items.length > 20)
           throw invalid();
         for (const [index, value] of items.entries()) {
           const item = input(value);
-          const position = item.parentIndex;
+          if (
+            !archiveFormat &&
+            (format === "word" || format === "pdf") &&
+            (await scanAttachment(decodeFile(item.data))) !== "clean"
+          )
+            throw invalid();
+          const decoded = archiveFormat
+            ? { title: item.title, content: item.content }
+            : await importItem(format, item);
+          const pos = item.parentIndex;
           const parentId =
-            position === undefined
-              ? optionalId(body.parentId)
-              : typeof position === "number" &&
-                  Number.isInteger(position) &&
-                  position >= 0 &&
-                  position < index
-                ? keys[position]
+            pos === undefined
+              ? parent
+              : typeof pos === "number" &&
+                  Number.isInteger(pos) &&
+                  pos >= 0 &&
+                  pos < index
+                ? keys[pos]
                 : undefined;
           if (parentId === undefined) throw invalid();
           keys.push(
-            (
-              await this.createPage({
-                title: item.title,
-                content: item.content,
-                spaceId,
-                parentId,
-              })
-            ).id,
+            (await this.createPage({ ...decoded, spaceId, parentId })).id,
           );
         }
       } else {
@@ -711,9 +735,24 @@ export class Wiki {
       if (!item) throw missing();
       const pages: Page[] = [];
       for (const page of item.target_ids) pages.push(await this.page(page));
+      const files =
+        kind === "export"
+          ? await exportFiles(item.format as TransferFormat, pages)
+          : { output: [], extraLosses: [] };
       const manifest = {
         format: item.format,
-        losses: ["attachments", "comments", "access-control", "relations"],
+        losses: [
+          "attachments",
+          "comments",
+          "access-control",
+          "relations",
+          ...files.extraLosses,
+          ...(["html", "confluence", "notion", "pdf", "word"].includes(
+            item.format,
+          ) && kind === "import"
+            ? ["rich-layout", "embedded-images", "remote-identity-and-acl"]
+            : []),
+        ],
         contentBasis: "current-authorized-draft",
       };
       if (kind === "import")
@@ -732,19 +771,22 @@ export class Wiki {
       return {
         id: key,
         status: "completed",
-        documents: pages.map((page) => ({
-          id: page.id,
-          revision: page.revision,
-          title: page.title,
-          data:
-            item.format === "html"
-              ? "<!doctype html><meta charset=utf-8><h1>" +
-                escape(page.title) +
-                "</h1><pre>" +
-                escape(page.content) +
-                "</pre>"
-              : page.content,
-        })),
+        files: files.output,
+        documents: !["markdown", "html"].includes(item.format)
+          ? []
+          : pages.map((page) => ({
+              id: page.id,
+              revision: page.revision,
+              title: page.title,
+              data:
+                item.format === "html"
+                  ? "<!doctype html><meta charset=utf-8><h1>" +
+                    escape(page.title) +
+                    "</h1><pre>" +
+                    escape(page.content) +
+                    "</pre>"
+                  : page.content,
+            })),
         manifest,
       };
     }

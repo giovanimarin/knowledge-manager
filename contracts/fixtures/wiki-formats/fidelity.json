@@ -1,0 +1,7 @@
+{
+  "title": "Operações e revisão",
+  "text": "Ação rápida.\n\nSegunda linha com café.",
+  "html": "<h1>Operações</h1><p>Ação rápida &amp; segura.</p><script>conteúdo ativo</script><a href=\"javascript:alert(1)\">link</a>",
+  "confluence": { "Guia.html": "<h1>Guia</h1><p>Versão aprovada</p>" },
+  "notion": { "Wiki.md": "# Wiki", "Wiki/Manual.md": "Manual interno" }
+}
