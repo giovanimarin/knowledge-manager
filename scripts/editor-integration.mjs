@@ -677,6 +677,102 @@ try {
       ) === "0",
     "revoked source derivatives survived",
   );
+  const managed = await request("POST", "/ingestion/sources", {
+    spaceId: ingestSpace.id,
+    title: "Fixture credencial",
+  });
+  const managedPath = "/ingestion/sources/" + managed.id;
+  const clientConfig = {
+    name: "Fixture source runner",
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+  };
+  const clients = [
+    await request("POST", "/service-clients", clientConfig),
+    await request("POST", "/service-clients", {
+      ...clientConfig,
+      name: "Fixture another runner",
+    }),
+  ];
+  const runnerRole = randomUUID();
+  db(`insert into km.identity_roles(tenant_id,id,name,actions) values
+    ('${tenant}','${runnerRole}','Runner fixture',array['knowledge.govern','content.acl.manage','content.read','content.edit']);
+    insert into km.identity_grants(tenant_id,id,role_id,client_id,resource_id,effect) values
+    ('${tenant}',gen_random_uuid(),'${runnerRole}','${clients[0].id}','${ingestSpace.id}','allow'),
+    ('${tenant}',gen_random_uuid(),'${runnerRole}','${clients[1].id}','${ingestSpace.id}','allow')`);
+  const [workerToken, anotherToken] = await Promise.all(
+    clients.map(
+      async (client) =>
+        (
+          await request(
+            "POST",
+            "/oauth/token",
+            {
+              grant_type: "client_credentials",
+              client_id: client.id,
+              client_secret: client.key,
+            },
+            null,
+          )
+        ).access_token,
+    ),
+  );
+  const providerToken = randomBytes(32).toString("hex");
+  const setup = {
+    provider: "drive",
+    target: "synthetic-drive",
+    runnerId: clients[0].id,
+    credential: providerToken,
+  };
+  const configured = await request("PUT", managedPath + "/connection", setup);
+  assert.equal(configured.credentialVersion, 1);
+  assert.equal(configured.credential, undefined);
+  await request("POST", managedPath + "/credential", {}, adminA, 404);
+  await request("POST", managedPath + "/credential", {}, anotherToken, 404);
+  const lease = await request(
+    "POST",
+    managedPath + "/credential",
+    {},
+    workerToken,
+  );
+  assert.ok(
+    lease.credential === providerToken && lease.target === setup.target,
+    "managed runner credential mismatch",
+  );
+  assert.ok(
+    db(`select credential like '%._%' and length(credential)>64
+    from km.ingest_sources where tenant_id='${tenant}' and id='${managed.id}'`) ===
+      "t",
+    "credential must be encrypted",
+  );
+  const rotation = randomBytes(32).toString("hex");
+  await request("PUT", managedPath + "/connection", {
+    ...setup,
+    credential: rotation,
+  });
+  const rotated = await request(
+    "POST",
+    managedPath + "/credential",
+    {},
+    workerToken,
+  );
+  assert.ok(
+    rotated.credential === rotation && rotated.credentialVersion === 2,
+    "managed rotation mismatch",
+  );
+  await request(
+    "POST",
+    managedPath + "/sync",
+    {
+      id: randomUUID(),
+      nextCursor: "rotated",
+      credentialVersion: 1,
+      entries: [],
+    },
+    workerToken,
+    409,
+  );
+  await request("DELETE", managedPath + "/connection");
+  await request("POST", managedPath + "/credential", {}, workerToken, 404);
   const profileRoute = "/ingestion/profiles";
   const model = process.env.KM_INGEST_EMBED_MODEL;
   const dimension = Number(process.env.KM_INGEST_EMBED_DIMENSION);
@@ -768,6 +864,7 @@ try {
       "withdrawal",
       "source-cursor",
       "signed-webhook-replay-rotation-revocation",
+      "scoped-credential-rotation",
     ],
   };
   if (process.env.KM_INGEST_G3_REPORT)

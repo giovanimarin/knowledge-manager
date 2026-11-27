@@ -3,7 +3,11 @@ import { sql } from "@km/foundation";
 import { EditorStore } from "../editor/store.js";
 import { IdentityError, id, input, string } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
-import { manageConnection, type Connection } from "./connection.js";
+import {
+  manageConnection,
+  runnerCredential,
+  type Connection,
+} from "./connection.js";
 import { Lifecycle } from "../editor/lifecycle.js";
 import { Wiki } from "../wiki/wiki.js";
 
@@ -38,14 +42,14 @@ export async function sources(
     return { id: source };
   }
   const request =
-    /^\/v1\/ingestion\/sources\/([^/]+)(?:\/(sync|objects|connection|signals))?$/.exec(
+    /^\/v1\/ingestion\/sources\/([^/]+)(?:\/(sync|objects|connection|signals|credential))?$/.exec(
       path,
     );
   if (!request) throw missing();
   const source = id(request[1]);
   if (method !== "GET") await store.lock();
   const connection = (
-    await sql<Connection>`select s.space_id,s.cursor,s.native_cursor,s.provider,s.credential_version,s.revoked_at from km.ingest_sources s
+    await sql<Connection>`select s.space_id,s.cursor,s.native_cursor,s.provider,s.credential_version,s.revoked_at,s.runner_id from km.ingest_sources s
     join km.wiki_spaces w on (w.tenant_id,w.id)=(s.tenant_id,s.space_id)
     where s.id=${source} and w.deleted_batch is null`.execute(store.tx)
   ).rows[0];
@@ -54,6 +58,15 @@ export async function sources(
   if (request[2] === "connection")
     return manageConnection(store, source, connection, method, body);
   if (connection.revoked_at) throw missing();
+  if (request[2] === "credential" && method === "POST")
+    return runnerCredential(store, source, connection);
+  if (
+    method === "POST" &&
+    connection.runner_id &&
+    (store.actor.kind !== "service" ||
+      store.actor.service.id !== connection.runner_id)
+  )
+    throw missing();
   if (method === "GET" && request[2] === "signals") {
     await store.require("content.acl.manage", connection.space_id);
     return (

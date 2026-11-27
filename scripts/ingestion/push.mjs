@@ -6,6 +6,7 @@ export async function pushSnapshot({
   session,
   mapped,
   signals = [],
+  expectedCredentialVersion,
 }) {
   const prefix = "/v1/ingestion/sources/" + source;
   async function api(path, body) {
@@ -47,6 +48,11 @@ export async function pushSnapshot({
     if (!after) break;
   }
   if (after) throw new Error("Object inventory may be truncated");
+  if (
+    expectedCredentialVersion != null &&
+    expectedCredentialVersion !== (credentialVersion ?? 0)
+  )
+    throw new Error("Source credential rotated during synchronization");
   const prior = new Map(records.map((object) => [object.remote_key, object]));
   const latest = new Set(snapshot.files.map((file) => file.remoteKey));
 

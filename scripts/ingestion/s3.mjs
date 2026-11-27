@@ -8,6 +8,7 @@ export async function s3Source({
   bucket,
   region,
   endpoint,
+  credentials,
   client: configured,
 }) {
   if (!bucket || !region) throw new Error("Invalid S3 configuration");
@@ -29,6 +30,7 @@ export async function s3Source({
     new S3Client({
       region,
       maxAttempts: 3,
+      ...(credentials ? { credentials } : {}),
       ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
     });
   const files = [];

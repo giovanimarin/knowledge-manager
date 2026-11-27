@@ -33,7 +33,10 @@ const server = createServer(async (request, response) => {
         chunks.push(chunk);
       }
       const headers = {};
-      for (const name of ["authorization", "content-type"]) {
+      const headerNames = /^\/v1\/ingestion\/hooks\//.test(request.url)
+        ? ["content-type", "x-hub-signature-256", "x-github-delivery"]
+        : ["authorization", "content-type"];
+      for (const name of headerNames) {
         const value = request.headers[name];
         if (typeof value === "string") headers[name] = value;
       }

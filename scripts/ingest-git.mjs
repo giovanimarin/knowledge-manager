@@ -1,3 +1,4 @@
+import { sourceConnection } from "./ingestion/connection.mjs";
 import { pushSnapshot } from "./ingestion/push.mjs";
 import { gitSource } from "./ingestion/git.mjs";
 
@@ -10,25 +11,26 @@ if (
   !/^[a-f0-9-]{36}$/i.test(source)
 )
   throw new Error("Informe URL local, credencial escopada e ID da fonte");
-const delivery = await fetch(
-  new URL("/v1/ingestion/sources/" + source + "/signals", KM_BASE_URL),
-  {
-    headers: { Authorization: "Bearer " + KM_SOURCE_SESSION },
-    redirect: "error",
-    signal: AbortSignal.timeout(10000),
-  },
+const connection = await sourceConnection({
+  base: KM_BASE_URL,
+  source,
+  session: KM_SOURCE_SESSION,
+  provider,
+  target: repository + "@" + ref,
+});
+const signals = (await connection.request("/signals")).map(
+  (signal) => signal.delivery,
 );
-if (!delivery.ok) throw new Error("Source signal inventory unavailable");
-const signals = (await delivery.json()).map((signal) => signal.delivery);
 const snapshot = await gitSource({
   provider,
   repository,
   ref,
-  credential: KM_GIT_SOURCE_TOKEN,
+  credential: connection.credential ?? KM_GIT_SOURCE_TOKEN,
 });
 const records = await pushSnapshot({
   snapshot,
   signals,
+  expectedCredentialVersion: connection.credentialVersion,
   source,
   base: KM_BASE_URL,
   session: KM_SOURCE_SESSION,

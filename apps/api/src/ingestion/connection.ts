@@ -1,7 +1,13 @@
 import { sql } from "@km/foundation";
 import { Lifecycle } from "../editor/lifecycle.js";
 import { EditorStore } from "../editor/store.js";
-import { IdentityError, seal, string } from "../identity/security.js";
+import {
+  IdentityError,
+  id,
+  seal,
+  string,
+  unseal,
+} from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
 import { hookPurpose } from "./hooks.js";
 
@@ -12,6 +18,7 @@ export type Connection = {
   provider: string | null;
   credential_version: number;
   revoked_at: Date | null;
+  runner_id: string | null;
 };
 
 const providers = new Set([
@@ -27,6 +34,47 @@ const providers = new Set([
   "gcs",
 ]);
 
+const credentialPurpose = (tenant: string, source: string) =>
+  `ingestion-remote-credential-v1:${tenant}:${source}`;
+
+export async function runnerCredential(
+  store: EditorStore,
+  source: string,
+  connection: Connection,
+) {
+  if (
+    store.actor.kind !== "service" ||
+    store.actor.service.id !== connection.runner_id
+  )
+    throw new IdentityError(404);
+  await store.require("content.acl.manage", connection.space_id);
+  const data = (
+    await sql<{
+      credential: string;
+      target: string;
+    }>`select credential,target from km.ingest_sources
+    where id=${source} and revoked_at is null`.execute(store.tx)
+  ).rows[0];
+  if (!data?.credential) throw new IdentityError(404);
+  await audit(
+    store.tx,
+    store.tenant,
+    store.actor.service.id,
+    "ingestion.source.dispatch",
+    "success",
+    connection.space_id,
+  );
+  return {
+    provider: connection.provider,
+    target: data.target,
+    credentialVersion: connection.credential_version,
+    credential: await unseal(
+      data.credential,
+      credentialPurpose(store.tenant, source),
+    ),
+  };
+}
+
 export async function manageConnection(
   store: EditorStore,
   source: string,
@@ -40,6 +88,7 @@ export async function manageConnection(
       provider: connection.provider,
       credentialVersion: connection.credential_version,
       revoked: !!connection.revoked_at,
+      ...(connection.runner_id ? { managed: true } : {}),
     };
   if (store.actor.kind !== "member" || !store.actor.member.stepped_up)
     throw new IdentityError(403);
@@ -57,7 +106,27 @@ export async function manageConnection(
       throw new IdentityError(400);
     const encrypted =
       secret && (await seal(secret, hookPurpose(store.tenant, source)));
+    const runner = body.runnerId == null ? null : id(body.runnerId);
+    const remoteCredential =
+      body.credential == null ? null : string(body.credential, 8192);
+    const target = body.target == null ? null : string(body.target, 400);
+    if (
+      (runner || target || remoteCredential) &&
+      !(runner && target && remoteCredential)
+    )
+      throw new IdentityError(400);
+    if (runner) {
+      const found = await sql`select 1 from km.service_clients
+        where id=${runner} and revoked_at is null and expires_at>now()`.execute(
+        store.tx,
+      );
+      if (!found.rows.length) throw new IdentityError(404);
+    }
+    const cipher =
+      remoteCredential &&
+      (await seal(remoteCredential, credentialPurpose(store.tenant, source)));
     await sql`update km.ingest_sources set provider=${provider},webhook_secret=${encrypted},
+      runner_id=${runner},credential=${cipher},target=${target},
       credential_version=credential_version+1 where id=${source}`.execute(
       store.tx,
     );
@@ -73,6 +142,7 @@ export async function manageConnection(
   }
   if (method === "DELETE") {
     await sql`update km.ingest_sources set revoked_at=now(),webhook_secret=null,native_cursor=null,
+      runner_id=null,credential=null,target=null,
       credential_version=credential_version+1 where id=${source}`.execute(
       store.tx,
     );
