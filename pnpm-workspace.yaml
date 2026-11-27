@@ -13,5 +13,6 @@ minimumReleaseAgeExclude:
   - "@nestjs/common@12.6.3"
   - "@nestjs/core@12.6.3"
   - "@nestjs/platform-express@12.6.3"
+  - unpdf@2.2.3
 overrides:
   protobufjs: 8.8.1

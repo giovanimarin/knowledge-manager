@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { Worker } from "node:worker_threads";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { SaxesParser } from "saxes";
@@ -16,7 +16,14 @@ const escape = (value: string) =>
     .replaceAll(">", "&gt;");
 const textLimit = 50000;
 
-type Item = { title: string; content: string; parentIndex?: number };
+type Item = {
+  title: string;
+  content: string;
+  parentIndex?: number;
+  files?: TransferFile[];
+  key?: string;
+  links?: { target: string; type: string }[];
+};
 export type TransferFile = {
   filename: string;
   contentType: string;
@@ -49,7 +56,10 @@ export function archive(bytes: Uint8Array) {
               part === ".." ||
               !part ||
               part.includes("\\") ||
-              part.includes(":"),
+              part.includes(":") ||
+              part === "__proto__" ||
+              part === "constructor" ||
+              part === "prototype",
           )
         )
           throw invalid();
@@ -133,30 +143,22 @@ function wordText(bytes: Uint8Array) {
 
 function pdfText(bytes: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
-    const process = spawn(
-      "pdftotext",
-      ["-enc", "UTF-8", "-nopgbrk", "-", "-"],
-      { stdio: ["pipe", "pipe", "ignore"] },
-    );
-    const output: Buffer[] = [];
-    let size = 0;
-    const timer = setTimeout(() => process.kill("SIGKILL"), 2500);
-    process.stdout.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > textLimit * 4) process.kill("SIGKILL");
-      else output.push(chunk);
+    const worker = new Worker(new URL("./pdf-extract.js", import.meta.url), {
+      workerData: new Uint8Array(bytes),
+      resourceLimits: { maxOldGenerationSizeMb: 64 },
+      stdout: true,
+      stderr: true,
     });
-    process.stdin.on("error", () => {});
-    process.on("error", () => {
+    const finish = (text?: string) => {
       clearTimeout(timer);
-      reject(new Error("PDF converter unavailable"));
-    });
-    process.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve(Buffer.concat(output).toString("utf8").trim());
-      else reject(invalid());
-    });
-    process.stdin.end(bytes);
+      void worker.terminate();
+      if (text === undefined) reject(invalid());
+      else resolve(text);
+    };
+    const timer = setTimeout(() => finish(), 2500);
+    worker.once("message", (result: { text?: string }) => finish(result.text));
+    worker.once("error", () => finish());
+    worker.once("exit", () => finish());
   });
 }
 
@@ -186,26 +188,63 @@ export async function importArchive(
   const entries = archive(decodeFile(data));
   const manifest = entries["knowledge-manager.json"];
   if (manifest && format === "zip") {
-    const parsed: unknown = JSON.parse(utf8(manifest));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(utf8(manifest));
+    } catch {
+      throw invalid();
+    }
     if (!Array.isArray(parsed) || !parsed.length || parsed.length > 20)
       throw invalid();
     return parsed.map((raw: unknown, i) => {
       const entry = input(raw);
-      const bytes = entries[string(entry.path, 240)];
+      const path = string(entry.path, 240);
+      const bytes = Object.hasOwn(entries, path) ? entries[path] : undefined;
       if (!bytes) throw invalid();
       const content = utf8(bytes);
       if (content.length > textLimit) throw invalid();
+      const result: Item = { title: string(entry.title), content };
+      if (entry.key !== undefined) result.key = string(entry.key, 160);
+      if (entry.links !== undefined) {
+        if (!Array.isArray(entry.links) || entry.links.length > 100)
+          throw invalid();
+        result.links = entry.links.map((raw: unknown) => {
+          const link = input(raw);
+          return {
+            target: string(link.target, 160),
+            type: string(link.type, 40),
+          };
+        });
+      }
+      if (entry.files !== undefined) {
+        if (!Array.isArray(entry.files) || entry.files.length > 50)
+          throw invalid();
+        result.files = entry.files.map((raw: unknown) => {
+          const asset = input(raw);
+          const assetPath = string(asset.path, 240);
+          const object = Object.hasOwn(entries, assetPath)
+            ? entries[assetPath]
+            : undefined;
+          if (!object) throw invalid();
+          return {
+            filename: string(asset.filename, 180),
+            contentType: string(asset.contentType, 100),
+            data: Buffer.from(object).toString("base64"),
+          };
+        });
+      }
       const parentIndex = entry.parentIndex;
-      if (parentIndex === null || parentIndex === undefined)
-        return { title: string(entry.title), content };
-      if (
-        typeof parentIndex !== "number" ||
-        !Number.isInteger(parentIndex) ||
-        parentIndex < 0 ||
-        parentIndex >= i
-      )
-        throw invalid();
-      return { title: string(entry.title), content, parentIndex };
+      if (parentIndex !== null && parentIndex !== undefined) {
+        if (
+          typeof parentIndex !== "number" ||
+          !Number.isInteger(parentIndex) ||
+          parentIndex < 0 ||
+          parentIndex >= i
+        )
+          throw invalid();
+        result.parentIndex = parentIndex;
+      }
+      return result;
     });
   }
   const paths = Object.keys(entries)
@@ -292,6 +331,13 @@ async function pdf(content: string) {
 }
 
 type ExportPage = {
+  assets?: {
+    id: string;
+    filename: string;
+    contentType: string;
+    bytes: Buffer;
+  }[];
+  links?: { target: string; type: string }[];
   id: string;
   parent_id: string | null;
   title: string;
@@ -321,6 +367,25 @@ export async function exportFiles(format: TransferFormat, pages: ExportPage[]) {
         return {
           title: page.title,
           path,
+          ...(page.assets?.length
+            ? {
+                files: page.assets.map((asset) => {
+                  const key = "objects/" + asset.id;
+                  entries[key] = asset.bytes;
+                  return {
+                    path: key,
+                    filename: asset.filename,
+                    contentType: asset.contentType,
+                  };
+                }),
+              }
+            : {}),
+          ...(pages.some((candidate) => candidate.links?.length)
+            ? {
+                key: page.id,
+                ...(page.links?.length ? { links: page.links } : {}),
+              }
+            : {}),
           parentIndex: order.findIndex(
             (parent) => parent.id === page.parent_id,
           ),
@@ -331,10 +396,18 @@ export async function exportFiles(format: TransferFormat, pages: ExportPage[]) {
         parentIndex: item.parentIndex < 0 ? null : item.parentIndex,
       }));
     entries["knowledge-manager.json"] = strToU8(JSON.stringify(manifest));
+    const compressed = zipSync(entries);
+    if (
+      compressed.length > maxFileBytes ||
+      Object.keys(entries).length > 130 ||
+      Object.values(entries).reduce((sum, bytes) => sum + bytes.length, 0) >
+        16 * 1024 * 1024
+    )
+      throw invalid();
     output.push({
       filename: "wiki.zip",
       contentType: "application/zip",
-      data: Buffer.from(zipSync(entries)).toString("base64"),
+      data: Buffer.from(compressed).toString("base64"),
     });
     return { output, extraLosses };
   }

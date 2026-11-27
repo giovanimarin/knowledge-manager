@@ -678,6 +678,9 @@ export class Wiki {
           : body.items;
         if (!Array.isArray(items) || !items.length || items.length > 20)
           throw invalid();
+        const sourceKeys = new Map<string, string>();
+        const queuedLinks: { source: string; target: string; type: string }[] =
+          [];
         for (const [index, value] of items.entries()) {
           const item = input(value);
           if (
@@ -700,9 +703,41 @@ export class Wiki {
                 ? keys[pos]
                 : undefined;
           if (parentId === undefined) throw invalid();
-          keys.push(
-            (await this.createPage({ ...decoded, spaceId, parentId })).id,
-          );
+          const created = (
+            await this.createPage({ ...decoded, spaceId, parentId })
+          ).id;
+          keys.push(created);
+          if (archiveFormat && item.key !== undefined) {
+            const key = string(item.key, 160);
+            if (sourceKeys.has(key)) throw invalid();
+            sourceKeys.set(key, created);
+          }
+          if (archiveFormat && Array.isArray(item.files))
+            for (const asset of item.files) {
+              const result = (await this.attachments(
+                created,
+                "POST",
+                input(asset),
+              )) as { scanState: string };
+              if (result.scanState !== "clean") throw invalid();
+            }
+          if (archiveFormat && Array.isArray(item.links))
+            for (const raw of item.links) {
+              const link = input(raw);
+              queuedLinks.push({
+                source: created,
+                target: string(link.target, 160),
+                type: string(link.type, 40),
+              });
+            }
+        }
+        for (const link of queuedLinks) {
+          const targetId = sourceKeys.get(link.target);
+          if (!targetId) throw invalid();
+          await this.relations(link.source, "POST", {
+            targetId,
+            type: link.type,
+          });
         }
       } else {
         const ids = body.pageIds;
@@ -735,17 +770,63 @@ export class Wiki {
       if (!item) throw missing();
       const pages: Page[] = [];
       for (const page of item.target_ids) pages.push(await this.page(page));
+      const exportPages =
+        item.format === "zip" && kind === "export"
+          ? await Promise.all(
+              pages.map(async (page) => {
+                const rows = (
+                  await sql<{
+                    id: string;
+                    filename: string;
+                    content_type: string;
+                    bytes: Buffer | null;
+                    sha256: string;
+                  }>`
+          select id,filename,content_type,bytes,sha256 from km.wiki_attachments where page_id=${page.id} and scan_state='clean'`.execute(
+                    this.tx,
+                  )
+                ).rows;
+                const assets = [];
+                for (const row of rows) {
+                  const bytes =
+                    row.bytes ?? (await readObject(this.tenant, row.id));
+                  if (
+                    createHash("sha256").update(bytes).digest("hex") !==
+                    row.sha256
+                  )
+                    throw new Error("Attachment integrity mismatch");
+                  assets.push({
+                    id: row.id,
+                    filename: row.filename,
+                    contentType: row.content_type,
+                    bytes,
+                  });
+                }
+                const links = (
+                  await sql<{
+                    target: string;
+                    type: string;
+                  }>`select target_id as target,kind as type from km.wiki_relations
+          where source_id=${page.id} and target_id=any(${item.target_ids}::uuid[])`.execute(
+                    this.tx,
+                  )
+                ).rows;
+                return { ...page, assets, links };
+              }),
+            )
+          : pages;
       const files =
         kind === "export"
-          ? await exportFiles(item.format as TransferFormat, pages)
+          ? await exportFiles(item.format as TransferFormat, exportPages)
           : { output: [], extraLosses: [] };
       const manifest = {
         format: item.format,
         losses: [
-          "attachments",
+          ...(item.format === "zip"
+            ? ["unverified-attachments", "relations-outside-selection"]
+            : ["attachments", "relations"]),
           "comments",
           "access-control",
-          "relations",
           ...files.extraLosses,
           ...(["html", "confluence", "notion", "pdf", "word"].includes(
             item.format,
@@ -1016,15 +1097,23 @@ export class Wiki {
     }
     if (method === "PATCH" && leaf) {
       const resolved = body.resolved;
-      if (typeof resolved !== "boolean") throw invalid();
-      const changed =
-        await sql`update km.wiki_comments set resolved=${resolved},
-        history=history||jsonb_build_array(jsonb_build_object('resolved',${resolved}::boolean,'actor',${member}::text,'at',now()))
-        where page_id=${key} and id=${id(leaf)} and actor_id=${member} and root_id is null returning id`.execute(
-          this.tx,
-        );
-      if (!changed.rows.length) throw missing();
-      return { id: leaf, resolved };
+      if (
+        (resolved !== undefined && typeof resolved !== "boolean") ||
+        (resolved === undefined && body.text === undefined)
+      )
+        throw invalid();
+      const edited = body.text === undefined ? null : string(body.text, 4000);
+      const changed = await sql<{ resolved: boolean }>`update km.wiki_comments
+        set resolved=coalesce(${resolved ?? null}::boolean,resolved),body=coalesce(${edited}::text,body),
+        history=history||jsonb_build_array(jsonb_build_object('resolved',resolved,'body',body,'actor',${member}::text,'at',now()))
+        where page_id=${key} and id=${id(leaf)} and actor_id=${member}
+        and (${resolved ?? null}::boolean is null or root_id is null) returning resolved`.execute(
+        this.tx,
+      );
+      const row = changed.rows[0];
+      if (!row) throw missing();
+      await this.event("comment.update", key);
+      return { id: leaf, resolved: row.resolved };
     }
     throw missing();
   }
@@ -1074,9 +1163,16 @@ export class Wiki {
         };
       }
       const scanState = await scanAttachment(bytes);
-      await sql`update km.wiki_attachments set scan_state=${scanState} where page_id=${key} and id=${file.id}`.execute(
-        this.tx,
-      );
+      if (file.bytes !== null) {
+        this.writes.add(file.id);
+        await putObject(this.tenant, file.id, bytes);
+        await sql`update km.wiki_attachments set scan_state=${scanState},bytes=null,object_size=${bytes.length}
+          where page_id=${key} and id=${file.id}`.execute(this.tx);
+      } else {
+        await sql`update km.wiki_attachments set scan_state=${scanState} where page_id=${key} and id=${file.id}`.execute(
+          this.tx,
+        );
+      }
       await this.event("attachment.scan." + scanState, key);
       return { id: file.id, scanState };
     }

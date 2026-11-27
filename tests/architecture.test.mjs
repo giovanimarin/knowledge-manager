@@ -18,6 +18,7 @@ const layers = {
     "pdf-lib",
     "sanitize-html",
     "saxes",
+    "unpdf",
     "reflect-metadata",
   ]),
   "apps/worker": entrypoints,

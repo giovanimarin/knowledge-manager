@@ -35,13 +35,11 @@ test("U3 opens an authorized document, adds a comment and previews a clean attac
   await expect(
     wiki.getByRole("heading", { name: "Política de acesso" }),
   ).toBeVisible();
-  await wiki
-    .getByLabel("Arquivos")
-    .setInputFiles({
-      name: "navegador.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("Prévia segura"),
-    });
+  await wiki.getByLabel("Arquivos").setInputFiles({
+    name: "navegador.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Prévia segura"),
+  });
   await wiki.getByRole("button", { name: "Enviar anexos" }).click();
   const attachment = wiki
     .getByRole("listitem")

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 
 const [, , identityFile, browserFile, mode] = process.argv;
@@ -358,6 +359,45 @@ for (const format of ["word", "pdf", "zip"]) {
   assert.match(restored.content, /Access checklist/i);
   assert.equal(detail.items[0].state, "draft");
 }
+const { zipSync, strToU8 } = createRequire(
+  new URL("../apps/api/package.json", import.meta.url),
+)("fflate");
+const fidelity = JSON.parse(
+  readFileSync(
+    new URL(
+      "../contracts/fixtures/wiki-formats/fidelity.json",
+      import.meta.url,
+    ),
+  ),
+);
+for (const format of ["confluence", "notion"]) {
+  const archive = zipSync(
+    Object.fromEntries(
+      Object.entries(fidelity[format]).map(([path, content]) => [
+        path,
+        strToU8(content),
+      ]),
+    ),
+  );
+  const job = await request("POST", "/import-jobs", {
+    format,
+    spaceId: other.id,
+    data: Buffer.from(archive).toString("base64"),
+  });
+  const receipt = await request("GET", "/import-jobs/" + job.id);
+  assert.equal(receipt.items.length, Object.keys(fidelity[format]).length);
+  assert.ok(receipt.manifest.losses.includes("remote-identity-and-acl"));
+}
+const checklist = await request(
+  "GET",
+  "/pages?spaceId=" +
+    space.id +
+    "&authorId=" +
+    adminMemberA +
+    "&since=2020-01-01T00%3A00%3A00Z&until=2099-01-01T00%3A00%3A00Z&tag=seguran%C3%A7a&sort=relevance&q=Access%20checklist",
+);
+assert.equal(checklist[0].id, root.id);
+assert.match(checklist[0].snippet, /Access checklist/);
 const deny = randomUUID();
 db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
  ('${tenant}','${deny}','${role}','${adminMemberA}','${root.id}','deny')`);
@@ -494,6 +534,30 @@ assert.equal(
   root.id,
 );
 assert.deepEqual(await request("GET", "/mentions", undefined, adminB), []);
+const deniedMention = randomUUID();
+db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
+ ('${tenant}','${deniedMention}','${role}','${browserMember.id}','${root.id}','deny')`);
+assert.deepEqual(
+  await request("GET", "/mentions", undefined, reader.accessToken),
+  [],
+);
+await request(
+  "GET",
+  "/pages/" + root.id + "/comments",
+  undefined,
+  reader.accessToken,
+  404,
+);
+await request(
+  "GET",
+  attachmentPath + "/" + attachment.id,
+  undefined,
+  reader.accessToken,
+  404,
+);
+db(
+  `delete from km.identity_grants where tenant_id='${tenant}' and id='${deniedMention}'`,
+);
 writeFileSync(
   browserFile,
   JSON.stringify({
@@ -505,6 +569,7 @@ writeFileSync(
   }),
   { mode: 0o600 },
 );
+const metrics = [];
 for (const [mode, url] of [
   ["filtered", "/pages?q=Access%20checklist&spaceId=" + space.id],
   ["unfiltered", "/pages"],
@@ -516,16 +581,43 @@ for (const [mode, url] of [
     elapsed.push(performance.now() - start);
   }
   elapsed.sort((a, b) => a - b);
-  console.log(
-    "Wiki benchmark " +
-      JSON.stringify({
-        mode,
-        requests: elapsed.length,
-        p50Ms: elapsed[7],
-        p95Ms: elapsed[14],
-      }),
-  );
+  const result = {
+    mode,
+    requests: elapsed.length,
+    p50Ms: elapsed[7],
+    p95Ms: elapsed[14],
+  };
+  metrics.push(result);
+  console.log("Wiki benchmark " + JSON.stringify(result));
 }
+if (process.env.KM_WIKI_G3_REPORT)
+  writeFileSync(
+    process.env.KM_WIKI_G3_REPORT,
+    JSON.stringify(
+      {
+        metrics,
+        scans: ["unavailable", "clean", "signature-rejected"],
+        fidelity: [
+          "markdown",
+          "html",
+          "word",
+          "pdf",
+          "zip",
+          "confluence-local",
+          "notion-local",
+        ],
+        authorization: [
+          "document-revocation",
+          "attachment-revocation",
+          "mentions-revocation",
+          "filtered-snippets",
+        ],
+        retention: ["restore-subtree", "terminal-purge"],
+      },
+      null,
+      2,
+    ) + "\n",
+  );
 console.log(
   "Wiki G1/G2: árvore, ACL ativa, busca, comentários, anexos em quarentena, templates e restauração",
 );
