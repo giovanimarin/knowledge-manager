@@ -195,6 +195,7 @@ export function Wiki({ token }: { token: string }) {
         <label>
           Espaço{" "}
           <select
+            aria-label="Espaço"
             value={space}
             onChange={(event) => {
               setSpace(event.target.value);
@@ -379,7 +380,7 @@ export function Wiki({ token }: { token: string }) {
           <ul>
             {comments.map((comment) => (
               <li key={comment.id}>
-                {comment.body}
+                <span>{comment.body}</span>
                 {comment.resolved ? " · Resolvido" : ""}
                 {comment.orphaned
                   ? " · Bloco removido"
