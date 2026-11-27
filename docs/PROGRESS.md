@@ -209,3 +209,16 @@ Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o pe
 No commit `65270fc`, os seis cenários Playwright passaram em **7,1 s**. O smoke mediu **41 ms** para confirmar os dois updates, **43 ms** na reconexão, **7 ms** até a negação observada na tentativa após revogação e **3.607 ms** para reiniciar a API e recuperar o documento. Backup em **10 s** e restore em **15 s**. O `pnpm verify` local executou 17 testes em **5,29 s**. As latências são de um ensaio sintético. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310) · [Smoke, Playwright e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310/artifacts/15221459518)
 
 Rodadas anteriores detectaram importação dupla de Yjs no unitário, licenças transitivas no Mermaid 12 e uma regra de assets que rejeitava pontos em nomes de chunks. O teste usa o mesmo módulo ESM da API, a versão Mermaid 11 evita a dependência ELK e a regra de assets passou em 64 chunks e na renderização real. [Protocolo e fixtures](packages/PKG-04-contracts.md) · [Runbook](packages/PKG-04-runbook.md)
+
+## PKG-05 — plano de execução
+
+Estimativa de 184–320 h do roadmap. Cada marco distribui seu peso igualmente entre quatro subtarefas. Estado inicial 0/16. O PR #13 teve três checks verdes; a ação de integração foi bloqueada pela revisão automática. O trabalho parte da main, que já contém o PKG-04.
+
+| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
+| --- | --- | --- |
+| N1 Fila e geração · 30% | 55–96 h | N1.1 capturar publicação/retirada com recibos; N1.2 ativar com CAS sob concorrência; N1.3 retry e reprocessamento seguro, incluindo crash; N1.4 remover derivados e negar leituras após revogação. |
+| N2 Conteúdo e vetores · 30% | 55–96 h | N2.1 extrair conteúdo limpo conforme política de formato; N2.2 normalizar e segmentar blocos/listas/tabelas/código com offsets e hierarquia; N2.3 deduplicar por hash dentro do tenant mantendo referências; N2.4 gerar embeddings com perfil e verificar pgvector. |
+| N3 Conectores e sincronização · 30% | 55–96 h | N3.1 conexões locais wiki/uploads/crawler/REST; N3.2 adaptadores GitHub/GitLab/Bitbucket; N3.3 adaptadores Drive/SharePoint/OneDrive/Confluence/Notion; N3.4 S3/GCS, cursor incremental, exclusões, limites e ACL de origem. |
+| N4 Evidência · 10% | 19–32 h | N4.1 contratos/fixtures positivas e negativas; N4.2 integração local e isolamento A/B/C; N4.3 regressões 01–04 e três checks; N4.4 evidências G1/G3 e status G4 por provedor. |
+
+[Contratos e plano de testes](packages/PKG-05-contracts.md)
