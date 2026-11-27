@@ -1,12 +1,12 @@
 # Acompanhamento do projeto
 
-Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 3/18 pacotes aceitos. PKG-01, PKG-02 e PKG-03 concluídos; PKG-04 é o próximo pacote.
+Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 4/18 pacotes aceitos. PKG-01, PKG-02, PKG-03 e PKG-04 concluídos; PKG-05 é o próximo pacote.
 
 ## Método
 Atualizar em cada PR: pacote, marco, tarefa/subtarefa, estado (pendente, em execução, bloqueado, em validação, concluído), evidência por commit/teste, pendências e próximo passo. Não inferir progresso de código escrito. Concluído exige evidência e aceite aplicável. Percentual do pacote ponderado por marcos e fração de subtarefas verificadas; pesos iniciais PKG-01 22/28/28/22, revisáveis explicitamente. Percentual global de pacotes aceitos separado de esforço ponderado e de prontidão comercial. Gates sandbox/produção pendentes não contam como comprovados. Registrar tempo real quando disponível, sem inventar horas. Manter roadmap e escopo normativo intactos.
 
 ## Pacotes
-PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 concluído e integrado; PKG-03 autorizado para planejamento e implementação; PKG-04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
+PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 concluído e integrado; PKG-03 concluído e integrado; PKG-04 concluído e integrado; PKG-05 autorizado para planejamento e implementação; PKG-06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
 
 ## PKG-01 — acompanhamento de implementação
 
@@ -197,7 +197,7 @@ Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o pe
 
 ### Implementação e evidências do PKG-04
 
-**Validação ponderada local e CI 100%, 16/16 subtarefas.** O PKG-04 segue para aceite técnico no PR #12. Pacotes formalmente aceitos: 3/18.
+**Validação ponderada local e CI 100%, 16/16 subtarefas.** O PKG-04 foi aceito tecnicamente e integrado via PR #12. Pacotes formalmente aceitos: **4/18 (22,2%)**.
 
 | Marco | Subtarefas | Evidência |
 | --- | --- | --- |
@@ -209,3 +209,10 @@ Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o pe
 No commit `65270fc`, os seis cenários Playwright passaram em **7,1 s**. O smoke mediu **41 ms** para confirmar os dois updates, **43 ms** na reconexão, **7 ms** até a negação observada na tentativa após revogação e **3.607 ms** para reiniciar a API e recuperar o documento. Backup em **10 s** e restore em **15 s**. O `pnpm verify` local executou 17 testes em **5,29 s**. As latências são de um ensaio sintético. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310) · [Smoke, Playwright e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310/artifacts/15221459518)
 
 Rodadas anteriores detectaram importação dupla de Yjs no unitário, licenças transitivas no Mermaid 12 e uma regra de assets que rejeitava pontos em nomes de chunks. O teste usa o mesmo módulo ESM da API, a versão Mermaid 11 evita a dependência ELK e a regra de assets passou em 64 chunks e na renderização real. [Protocolo e fixtures](packages/PKG-04-contracts.md) · [Runbook](packages/PKG-04-runbook.md)
+
+## Encerramento formal PKG-04
+
+- PR #12 revisado tecnicamente e integrado à main em `040fb97acb6a7f724dbddec8b96dfc35d0b48243`; head de aceite `ff4124d090effa11e6cb0dc55162d69cd361a3d5`.
+- E1/E2/E3/E4 completos; **16/16 subtarefas, validação ponderada 100%**. [GitHub Actions final 46045510041](https://github.com/giovanimarin/knowledge-manager/actions/runs/46045510041) confirmou os três checks obrigatórios; artefatos smoke e audit no head. O smoke registrou CRDT com dois clientes, replay/ACK idempotente, reconexão 44 ms, revogação 7 ms, reinício+sync 3.532 ms e 6/6 Playwright, com regressões 01–03 e isolamento shared/dedicated. Tempos são de fixture, não SLO.
+- Retenção, avisos e vencimentos dependem de agendamento do operador via `scripts/local.sh editor-maintenance`, conforme runbook. Autenticação corporativa real, integrações downstream e escala/hardening de produção permanecem nos pacotes correspondentes.
+- **Pacotes de implementação aceitos: 4/18 (22,2%)**; não equivale a percentual de esforço nem prontidão para produção. Próximo: **PKG-05**, ingestão de conhecimento, extração/conversão, filas, deduplicação, embeddings, conectores e seus testes de isolamento/qualidade. Decompor em marcos/subtarefas e publicar contratos/fixtures antes de implementar, preservar escopo completo e zero serviços pagos sem autorização.
