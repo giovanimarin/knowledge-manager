@@ -10,9 +10,10 @@ export async function ingest(
   method: string,
   path: string,
   body: Record<string, unknown>,
+  query: URLSearchParams,
 ) {
   if (path.startsWith("/v1/ingestion/sources"))
-    return sources(store, method, path, body);
+    return sources(store, method, path, body, query);
   const match =
     /^\/v1\/ingestion\/pages\/([^/]+)\/(chunks|jobs|reprocess)$/.exec(path);
   if (!match) throw new IdentityError(404);

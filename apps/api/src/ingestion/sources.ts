@@ -13,6 +13,7 @@ export async function sources(
   method: string,
   path: string,
   body: Record<string, unknown>,
+  query: URLSearchParams,
 ) {
   const prefix = "/v1/ingestion/sources";
   if (path === prefix && method === "POST") {
@@ -50,6 +51,8 @@ export async function sources(
   if (!connection) throw missing();
   await store.require("knowledge.govern", connection.space_id);
   if (method === "GET" && request[2] === "objects") {
+    const next = query.get("after");
+    if (next !== null) string(next, 400);
     const found = (
       await sql<{
         page_id: string | null;
@@ -57,16 +60,20 @@ export async function sources(
         version: string;
         state: string;
       }>`
-      select remote_key,version,state,page_id from km.ingest_objects where source_id=${source}
-      order by remote_key limit 200`.execute(store.tx)
+      select remote_key,version,state,page_id from km.ingest_objects where source_id=${source} and (${next}::text is null or remote_key>${next}::text)
+      order by remote_key limit 101`.execute(store.tx)
     ).rows;
     const safe = [];
-    for (const row of found) {
+    for (const row of found.slice(0, 100)) {
       if (row.page_id && !(await store.can("content.read", row.page_id)))
         continue;
       safe.push(row);
     }
-    return { cursor: connection.cursor, objects: safe };
+    return {
+      cursor: connection.cursor,
+      objects: safe,
+      after: found.length > 100 ? found[99]?.remote_key : null,
+    };
   }
   if (method !== "POST" || request[2] !== "sync") throw missing();
   await store.require("content.acl.manage", connection.space_id);

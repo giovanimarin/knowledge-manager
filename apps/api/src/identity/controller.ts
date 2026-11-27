@@ -136,6 +136,7 @@ export class IdentityController {
           req.method ?? "",
           pathname,
           body,
+          new URL(req.url ?? "/", "http://localhost").searchParams,
         ),
       );
     if (pathname.startsWith("/v1/editor/"))

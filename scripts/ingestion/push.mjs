@@ -24,12 +24,22 @@ export async function pushSnapshot({
       );
     return response.json();
   }
-  const current = await api("/objects");
-  if (current.objects.length >= 200)
-    throw new Error("Object inventory may be truncated");
-  const prior = new Map(
-    current.objects.map((object) => [object.remote_key, object]),
-  );
+  const records = [];
+  let after;
+  let cursor;
+  for (let page = 0; page < 10; page++) {
+    const result = await api(
+      "/objects" + (after ? "?after=" + encodeURIComponent(after) : ""),
+    );
+    if (page && cursor !== result.cursor)
+      throw new Error("Concurrent import changed the inventory");
+    cursor = result.cursor;
+    records.push(...result.objects);
+    after = result.after;
+    if (!after) break;
+  }
+  if (after) throw new Error("Object inventory may be truncated");
+  const prior = new Map(records.map((object) => [object.remote_key, object]));
   const latest = new Set(snapshot.files.map((file) => file.remoteKey));
 
   const pending = [];
@@ -57,7 +67,7 @@ export async function pushSnapshot({
       acl: mapped ? "mapped-space" : "unknown",
     });
   }
-  let cursor = current.cursor;
+  cursor ??= null;
   for (let offset = 0; offset < pending.length; offset += 10) {
     const nextCursor = randomUUID();
     await api("/sync", {
