@@ -6,6 +6,7 @@ x-app: &app
     PGUSER: km_app
     PGPASSWORD: ${KM_APP_PASSWORD:?Execute make setup}
     REDIS_HOST: redis
+    KM_IDENTITY_KEY: ${KM_IDENTITY_KEY:-}
     STORAGE_PATH: /var/lib/km
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
   volumes:

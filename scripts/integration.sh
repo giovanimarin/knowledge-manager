@@ -4,6 +4,8 @@ scratch="$(mktemp -d)"
 prefix="kmtest$(node -e 'process.stdout.write(require("node:crypto").randomBytes(6).toString("hex"))')"
 export KM_WEB_PORT="${KM_WEB_PORT:-3108}"
 export KM_BASE_URL="http://127.0.0.1:$KM_WEB_PORT"
+shared_key="$(node -e 'console.log(require("node:crypto").randomBytes(32).toString("hex"))')"
+export KM_IDENTITY_KEY="$shared_key"
 artifacts="${KM_ARTIFACTS_DIR:-artifacts}"
 mkdir -p "$artifacts"
 
@@ -17,7 +19,7 @@ cleanup() {
   local status=$? project
   trap - EXIT
   set +e
-  for project in source restored rejected; do
+  for project in source restored rejected dedicated; do
     use_project "$project"
     if [[ -f "$KM_ENV_FILE" ]]; then
       compose logs --no-color > "$artifacts/$project.log" 2>&1
@@ -39,6 +41,15 @@ make setup
 [[ "$(docker network inspect "${COMPOSE_PROJECT_NAME}_ingress" --format '{{index .Options "com.docker.network.bridge.enable_ip_masquerade"}}')" == false ]]
 echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
+node scripts/identity-integration.mjs primary "$scratch/identity"
+compose up -d --wait --no-build --scale api=2 --scale worker=2
+for index in 1 2; do
+  compose exec -T --index "$index" api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r=>{if(!r.ok) process.exit(1)})'
+  compose exec -T --index "$index" worker node -e 'fetch("http://127.0.0.1:3001/readyz").then(r=>{if(!r.ok) process.exit(1)})'
+done
+make smoke
+echo "Escala local: duas réplicas API e worker saudáveis com fila e PostgreSQL compartilhados"
+compose up -d --wait --no-build --scale api=1 --scale worker=1
 pnpm test:e2e
 node scripts/benchmark.mjs
 
@@ -91,3 +102,17 @@ if make setup; then
 fi
 [[ -z "$(compose ps -q api worker web)" ]]
 echo "Backup incompleto recusado; aplicação permaneceu indisponível"
+
+
+use_project dedicated
+unset KM_IDENTITY_KEY
+make setup
+node scripts/identity-integration.mjs dedicated "$scratch/identity"
+make stop
+
+use_project source
+export KM_IDENTITY_KEY="$shared_key"
+make start
+node scripts/identity-integration.mjs cross "$scratch/identity"
+make stop
+echo "Isolamento bidirecional shared/dedicated confirmado"

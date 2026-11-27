@@ -166,6 +166,17 @@ export class Dependencies {
     }
   }
 
+  async inTenant<T>(
+    tenant: string,
+    action: (tx: import("kysely").Transaction<Database>) => Promise<T>,
+  ): Promise<T> {
+    if (!uuid.test(tenant)) throw new Error("Invalid tenant ID");
+    return this.database.transaction().execute(async (tx) => {
+      await sql`select set_config('km.tenant_id', ${tenant}, true)`.execute(tx);
+      return action(tx);
+    });
+  }
+
   async recordProbe(id: string) {
     await this.database
       .insertInto("km.probe_receipts")
@@ -197,3 +208,6 @@ export function sendHealth(
 }
 
 export { Queue, QueueEvents, Worker, UnrecoverableError } from "bullmq";
+
+export { sql };
+export type TenantTransaction = import("kysely").Transaction<Database>;

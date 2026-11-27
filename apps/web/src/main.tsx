@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { Identity } from "./identity";
 
 function App() {
   const [attempt, setAttempt] = useState(0);
@@ -58,6 +59,7 @@ function App() {
           Verificar novamente
         </button>
       </section>
+      <Identity />
     </main>
   );
 }

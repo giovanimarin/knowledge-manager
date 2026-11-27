@@ -11,6 +11,54 @@ const assetTypes = {
 
 const server = createServer(async (request, response) => {
   response.setHeader("X-Content-Type-Options", "nosniff");
+  if (request.url?.startsWith("/v1/")) {
+    const abort = AbortSignal.timeout(8000);
+    try {
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of request) {
+        size += chunk.length;
+        if (size > 100 * 1024) {
+          response.writeHead(413).end();
+          return;
+        }
+        chunks.push(chunk);
+      }
+      const headers = {};
+      for (const name of ["authorization", "content-type"]) {
+        const value = request.headers[name];
+        if (typeof value === "string") headers[name] = value;
+      }
+      const upstream = await fetch(`http://api:3000${request.url}`, {
+        method: request.method,
+        headers,
+        ...(request.method === "GET" || request.method === "HEAD"
+          ? {}
+          : { body: Buffer.concat(chunks) }),
+        signal: abort,
+        redirect: "error",
+      });
+      const forwarded = { "Cache-Control": "no-store" };
+      for (const name of ["content-type", "retry-after", "x-correlation-id"]) {
+        const value = upstream.headers.get(name);
+        if (value) forwarded[name] = value;
+      }
+      response.writeHead(upstream.status, forwarded).end(await upstream.text());
+    } catch {
+      if (!response.headersSent)
+        response
+          .writeHead(503, { "Content-Type": "application/problem+json" })
+          .end(
+            JSON.stringify({
+              type: "about:blank",
+              title: "Service Unavailable",
+              status: 503,
+            }),
+          );
+      else response.end();
+    }
+    return;
+  }
   if (request.method !== "GET") {
     response.writeHead(405, { Allow: "GET" }).end();
     return;

@@ -1,4 +1,6 @@
 import "reflect-metadata";
+import { IdentityController } from "./identity/controller.js";
+import { Sessions } from "./identity/sessions.js";
 import { Controller, Get, Inject, Module, Res } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { ServerResponse } from "node:http";
@@ -27,8 +29,11 @@ class FoundationController {
 const dependencies = new Dependencies();
 
 @Module({
-  controllers: [FoundationController],
-  providers: [{ provide: Dependencies, useValue: dependencies }],
+  controllers: [FoundationController, IdentityController],
+  providers: [
+    { provide: Dependencies, useValue: dependencies },
+    { provide: Sessions, useFactory: () => new Sessions(dependencies) },
+  ],
 })
 class FoundationModule {}
 

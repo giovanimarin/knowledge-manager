@@ -29,15 +29,16 @@ initialize_env() {
 const { randomBytes } = require("node:crypto");
 const { writeFileSync } = require("node:fs");
 const password = () => randomBytes(32).toString("hex");
-writeFileSync(process.argv[2], `KM_APP_PASSWORD=${password()}\nKM_DB_PASSWORD=${password()}\n`, { flag: "wx", mode: 0o600 });
+writeFileSync(process.argv[2], `KM_APP_PASSWORD=${password()}\nKM_DB_PASSWORD=${password()}\nKM_IDENTITY_KEY=${password()}\n`, { flag: "wx", mode: 0o600 });
 JS
   fi
 }
 
 migrate() {
-  local checksum
+  local checksum identity_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
-  db -v "checksum=$checksum" -f /km-infra/migrate.sql
+  identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
+  db -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {
@@ -58,6 +59,31 @@ setup() {
   # Open only after SQL and object checks. A failed restore is never repaired by setup.
   storage verify-start
   compose up -d --wait --no-build api worker web
+}
+
+bootstrap() {
+  local name="${1:-}" email="${2:-}" display="${3:-}" plain encoded organization member
+  [[ -n "$name" && "$email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ && -n "$display" ]]
+  if [[ -t 0 ]]; then
+    read -r -s -p "Senha inicial (mínimo 12 caracteres): " plain
+    echo >&2
+  else
+    read -r plain
+  fi
+  encoded="$(printf '%s' "$plain" | compose exec -T api node /app/api/dist/identity/hash-password.js)"
+  unset plain
+  organization="$(node -e 'console.log(require("node:crypto").randomUUID())')"
+  member="$(node -e 'console.log(require("node:crypto").randomUUID())')"
+  db -q -v "organization=$organization" -v "member=$member" -v "name=$name" -v "email=$email" -v "display=$display" -v "encoded=$encoded" <<'SQL'
+BEGIN;
+INSERT INTO km.organizations (tenant_id,name) VALUES (:'organization',:'name');
+INSERT INTO km.memberships (tenant_id,id,email,name,password_hash,admin)
+VALUES (:'organization',:'member',lower(:'email'),:'display',:'encoded',true);
+INSERT INTO km.identity_audit (tenant_id,actor_id,action,resource_id,outcome)
+VALUES (:'organization',:'member','identity.organization-provisioned',:'organization','success');
+COMMIT;
+SQL
+  printf '{"tenant":"%s","member":"%s"}\n' "$organization" "$member"
 }
 
 snapshot_dir() {
@@ -121,7 +147,7 @@ restore() {
 command="${1:-}"
 shift || true
 case "$command" in
-  setup|start|stop|smoke|backup|restore)
+  setup|start|stop|smoke|backup|restore|bootstrap)
     [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Projeto Compose inválido' >&2; exit 1; }
     lock="${TMPDIR:-/tmp}/km-compose-$COMPOSE_PROJECT_NAME.lock"
     mkdir "$lock" || { echo 'Outra operação está ativa para este projeto' >&2; exit 1; }
@@ -130,6 +156,7 @@ case "$command" in
 esac
 case "$command" in
   setup) setup ;;
+  bootstrap) bootstrap "$@" ;;
   start) compose up -d --wait --no-build ;;
   stop) compose stop ;;
   status) compose ps --all ;;
