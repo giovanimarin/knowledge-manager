@@ -131,7 +131,12 @@ export class IdentityController {
     }
     if (pathname.startsWith("/v1/ingestion/"))
       return this.sessions.withActor(auth, (tx, tenant, actor) =>
-        ingest(new EditorStore(tx, tenant, actor), req.method ?? "", pathname),
+        ingest(
+          new EditorStore(tx, tenant, actor),
+          req.method ?? "",
+          pathname,
+          body,
+        ),
       );
     if (pathname.startsWith("/v1/editor/"))
       return this.sessions.withActor(auth, (tx, tenant, actor) =>

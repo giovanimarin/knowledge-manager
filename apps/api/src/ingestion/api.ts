@@ -1,10 +1,18 @@
+import { sources } from "./sources.js";
 import { randomUUID } from "node:crypto";
 import { sql } from "@km/foundation";
 import { EditorStore } from "../editor/store.js";
 import { IdentityError, id } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
 
-export async function ingest(store: EditorStore, method: string, path: string) {
+export async function ingest(
+  store: EditorStore,
+  method: string,
+  path: string,
+  body: Record<string, unknown>,
+) {
+  if (path.startsWith("/v1/ingestion/sources"))
+    return sources(store, method, path, body);
   const match =
     /^\/v1\/ingestion\/pages\/([^/]+)\/(chunks|jobs|reprocess)$/.exec(path);
   if (!match) throw new IdentityError(404);

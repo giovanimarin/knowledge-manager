@@ -10,7 +10,7 @@ CREATE TABLE km.ingest_jobs (
 CREATE INDEX ON km.ingest_jobs(tenant_id,status,next_at) WHERE status='queued';
 CREATE TABLE km.ingest_vectors (
  tenant_id uuid NOT NULL REFERENCES km.organizations, profile text NOT NULL, digest text NOT NULL,
- embedding public.vector(64) NOT NULL, PRIMARY KEY(tenant_id,profile,digest)
+ embedding public.vector NOT NULL CHECK (public.vector_dims(embedding) BETWEEN 1 AND 4096), PRIMARY KEY(tenant_id,profile,digest)
 );
 CREATE TABLE km.ingest_generations (
  tenant_id uuid NOT NULL REFERENCES km.organizations, page_id uuid NOT NULL, publication_id uuid NOT NULL,
@@ -69,3 +69,32 @@ INSERT INTO km.ingest_jobs(tenant_id,id,page_id,publication_id,kind)
  SELECT tenant_id,id,page_id,publication_id,kind FROM km.editor_outbox WHERE kind IN ('published','withdrawn') ON CONFLICT DO NOTHING;
 ALTER TABLE km.ingest_jobs FORCE ROW LEVEL SECURITY;
 ALTER TABLE km.editor_outbox FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE km.ingest_sources (
+ tenant_id uuid NOT NULL, id uuid NOT NULL, space_id uuid NOT NULL, title text NOT NULL, cursor text,
+ created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,id),
+ FOREIGN KEY(tenant_id,space_id) REFERENCES km.wiki_spaces ON DELETE CASCADE
+);
+CREATE TABLE km.ingest_objects (
+ tenant_id uuid NOT NULL, source_id uuid NOT NULL, remote_key text NOT NULL, version text NOT NULL,
+ page_id uuid, state text NOT NULL CHECK(state IN ('draft','quarantine','deleted')),
+ PRIMARY KEY(tenant_id,source_id,remote_key),
+ FOREIGN KEY(tenant_id,source_id) REFERENCES km.ingest_sources ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,page_id) REFERENCES km.wiki_pages ON DELETE SET NULL (page_id)
+);
+CREATE TABLE km.ingest_sync_receipts (
+ tenant_id uuid NOT NULL, source_id uuid NOT NULL, id uuid NOT NULL, digest text NOT NULL,
+ count integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,source_id,id),
+ FOREIGN KEY(tenant_id,source_id) REFERENCES km.ingest_sources ON DELETE CASCADE
+);
+DO $$
+DECLARE relation text;
+BEGIN
+ FOREACH relation IN ARRAY ARRAY['ingest_sources','ingest_objects','ingest_sync_receipts'] LOOP
+  EXECUTE format('ALTER TABLE km.%I ENABLE ROW LEVEL SECURITY',relation);
+  EXECUTE format('ALTER TABLE km.%I FORCE ROW LEVEL SECURITY',relation);
+  EXECUTE format('CREATE POLICY tenant_scope ON km.%I USING (tenant_id=nullif(current_setting(''km.tenant_id'',true),'''')::uuid)',relation);
+  EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON km.%I TO km_app',relation);
+ END LOOP;
+END $$;

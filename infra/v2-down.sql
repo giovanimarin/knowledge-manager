@@ -5,6 +5,7 @@ SELECT pg_advisory_xact_lock(71189001);
 DROP VIEW IF EXISTS km.ingest_eligible;
 DROP TRIGGER IF EXISTS ingest_capture ON km.editor_outbox;
 DROP FUNCTION IF EXISTS km.ingest_capture();
+DROP TABLE IF EXISTS km.ingest_sync_receipts, km.ingest_objects, km.ingest_sources;
 DROP TABLE IF EXISTS km.ingest_chunks, km.ingest_generations, km.ingest_vectors, km.ingest_jobs, km.ingest_tenants;
 DROP TABLE IF EXISTS km.editor_outbox, km.editor_publications, km.editor_reviews, km.editor_space_policy, km.editor_versions, km.editor_receipts, km.editor_states;
 DROP TABLE IF EXISTS km.wiki_uploads, km.wiki_settings, km.wiki_tombstones, km.wiki_transfer_jobs, km.wiki_attachments, km.wiki_templates, km.wiki_comments, km.wiki_relations, km.wiki_pages, km.wiki_spaces;

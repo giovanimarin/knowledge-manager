@@ -1,7 +1,9 @@
 import { sql, type Dependencies, type TenantTransaction } from "@km/foundation";
-import { embed, segments, type Block } from "./segments.js";
+import { configuredEmbedding } from "./embedding.js";
+import { segments, type Block } from "./segments.js";
 
-const profile = "local-lexical-v1";
+const embedding = configuredEmbedding();
+const profile = embedding.profile;
 type Job = {
   id: string;
   page_id: string;
@@ -47,7 +49,7 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
     await sql<{
       publication_id: string;
     }>`select publication_id from km.ingest_generations
-    where page_id=${job.page_id}`.execute(tx)
+    where profile=${profile} and page_id=${job.page_id}`.execute(tx)
   ).rows[0];
   if (job.kind !== "reprocess" && present?.publication_id === current.id)
     return;
@@ -69,7 +71,8 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
       )
     ).rows.length;
     if (!cached) {
-      const vector = "[" + embed(chunk.content).join(",") + "]";
+      const vector =
+        "[" + (await embedding.vector(chunk.content)).join(",") + "]";
       await sql`insert into km.ingest_vectors values(${tenant},${profile},${chunk.digest},${vector}::public.vector)
         on conflict do nothing`.execute(tx);
     }
