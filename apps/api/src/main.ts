@@ -3,6 +3,7 @@ import { IdentityController } from "./identity/controller.js";
 import { Sessions } from "./identity/sessions.js";
 import { Controller, Get, Inject, Module, Res } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { ServerResponse } from "node:http";
 import { Dependencies, sendHealth, startTelemetry } from "@km/foundation";
 
@@ -39,9 +40,13 @@ class FoundationModule {}
 
 async function main() {
   const telemetry = startTelemetry();
-  const api = await NestFactory.create(FoundationModule, {
-    logger: ["warn", "error"],
-  });
+  const api = await NestFactory.create<NestExpressApplication>(
+    FoundationModule,
+    {
+      logger: ["warn", "error"],
+    },
+  );
+  api.useBodyParser("json", { limit: "12mb" });
   await api.listen(3000, "0.0.0.0");
   console.log(JSON.stringify({ service: "api", event: "listening" }));
 

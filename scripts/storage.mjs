@@ -8,6 +8,20 @@ const marker = join(root, ".ready");
 const pending = join(root, ".restore-pending");
 const objectId =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const objectKey = (key) =>
+  typeof key === "string" &&
+  key.split("/").length <= 2 &&
+  key.split("/").every((part) => objectId.test(part));
+async function* inventory(dir, prefix = "") {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (!objectId.test(entry.name)) throw new Error("Unexpected storage entry");
+    const key = prefix + entry.name;
+    if (entry.isDirectory() && !prefix)
+      yield* inventory(join(dir, entry.name), key + "/");
+    else if (entry.isFile()) yield key;
+    else throw new Error("Unexpected storage entry");
+  }
+}
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const stdin = async () => {
   const chunks = [];
@@ -41,15 +55,9 @@ switch (process.argv[2]) {
     break;
   case "snapshot": {
     const entries = [];
-    for (const entry of await readdir(objects, { withFileTypes: true })) {
-      if (!entry.isFile() || !objectId.test(entry.name))
-        throw new Error("Unexpected storage entry");
-      const bytes = await readFile(join(objects, entry.name));
-      entries.push({
-        id: entry.name,
-        sha256: hash(bytes),
-        data: bytes.toString("base64"),
-      });
+    for await (const id of inventory(objects)) {
+      const bytes = await readFile(join(objects, id));
+      entries.push({ id, sha256: hash(bytes), data: bytes.toString("base64") });
     }
     entries.sort((a, b) => a.id.localeCompare(b.id));
     console.log(JSON.stringify(entries));
@@ -63,7 +71,7 @@ switch (process.argv[2]) {
     const decoded = new Map();
     for (const entry of entries) {
       if (
-        !objectId.test(entry.id) ||
+        !objectKey(entry.id) ||
         decoded.has(entry.id) ||
         typeof entry.data !== "string"
       ) {
@@ -78,8 +86,32 @@ switch (process.argv[2]) {
       }
       decoded.set(entry.id, bytes);
     }
-    for (const [id, bytes] of decoded)
+    for (const [id, bytes] of decoded) {
+      const parts = id.split("/");
+      if (parts.length === 2)
+        await mkdir(join(objects, parts[0]), { recursive: true, mode: 0o700 });
       await writeFile(join(objects, id), bytes, { flag: "wx", mode: 0o600 });
+    }
+    break;
+  }
+  case "prune": {
+    for (const key of (await stdin()).toString().split("\n").filter(Boolean)) {
+      if (!objectKey(key) || !key.includes("/"))
+        throw new Error("Invalid private object key");
+      await rm(join(objects, key), { force: true });
+    }
+    break;
+  }
+  case "reconcile": {
+    const referenced = new Set(
+      (await stdin()).toString().split("\n").filter(Boolean),
+    );
+    for (const key of referenced)
+      if (!objectKey(key) || !key.includes("/"))
+        throw new Error("Invalid private object key");
+    for await (const key of inventory(objects))
+      if (key.includes("/") && !referenced.has(key))
+        await rm(join(objects, key));
     break;
   }
   case "check": {
@@ -87,7 +119,7 @@ switch (process.argv[2]) {
     for (const line of content.toString().trim().split("\n").filter(Boolean)) {
       const [id, checksum] = line.split("|");
       if (
-        !objectId.test(id) ||
+        !objectKey(id) ||
         hash(await readFile(join(objects, id))) !== checksum
       ) {
         throw new Error("Database and storage disagree");

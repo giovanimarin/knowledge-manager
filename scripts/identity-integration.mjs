@@ -361,6 +361,8 @@ async function primary() {
     file,
     JSON.stringify({
       adminA,
+      adminB,
+      adminMemberA: a.member,
       workerTenantB: b.tenant,
       tenant: a.tenant,
       email: aAccount.email,
@@ -389,7 +391,7 @@ async function dedicated() {
   );
   assert.notEqual(second.status, 0);
   assert.match(second.stderr, /dedicated tenant already provisioned/);
-  const { accessToken } = await start(
+  const { token: accessToken } = await admin(
     login(c.tenant, "admin-c@example.invalid", password),
   );
   assert.equal(

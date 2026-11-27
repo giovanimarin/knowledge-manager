@@ -20,6 +20,7 @@ import {
   parseToken,
 } from "./security.js";
 import { audit, changeEpoch, Sessions } from "./sessions.js";
+import { Wiki } from "../wiki/wiki.js";
 import { Management } from "./management.js";
 
 @Controller("v1")
@@ -79,8 +80,9 @@ export class IdentityController {
 
   private async dispatch(req: IncomingMessage, pathname: string, raw: unknown) {
     const key = `${req.method} ${pathname}`;
-    const body =
-      req.method === "POST" || req.method === "PATCH" ? input(raw) : {};
+    const body = ["POST", "PUT", "PATCH"].includes(req.method ?? "")
+      ? input(raw)
+      : {};
     const address = req.socket.remoteAddress ?? "unknown";
     const auth = req.headers.authorization;
     const publicProof = {
@@ -119,6 +121,30 @@ export class IdentityController {
         `mfa-member:${principal.id}`,
         5,
       );
+    }
+    if (pathname.startsWith("/v1/wiki/")) {
+      const holder: { wiki?: Wiki } = {};
+      let committed = false;
+      try {
+        const result = await this.sessions.withActor(
+          auth,
+          async (tx, tenant, actor) => {
+            const query = new URL(req.url ?? "/", "http://localhost")
+              .searchParams;
+            holder.wiki = new Wiki(tx, tenant, actor);
+            return holder.wiki.dispatch(
+              req.method ?? "",
+              pathname,
+              body,
+              query,
+            );
+          },
+        );
+        committed = true;
+        return result;
+      } finally {
+        await holder.wiki?.finishObjects(committed);
+      }
     }
     return this.sessions.withActor(auth, async (tx, tenant, actor) => {
       if (key === "GET /v1/me") {

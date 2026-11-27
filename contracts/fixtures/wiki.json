@@ -1,0 +1,21 @@
+{
+  "space": { "title": "Operações" },
+  "page": {
+    "title": "Política de acesso",
+    "content": "Checklist interno. Access checklist.",
+    "tags": ["segurança"]
+  },
+  "child": {
+    "title": "Recuperação",
+    "content": "Procedimento de recuperação."
+  },
+  "comment": { "text": "Revisar com segurança." },
+  "relation": { "type": "reference" },
+  "negative": {
+    "anonymous": 401,
+    "foreignTenant": 404,
+    "hiddenResource": 404,
+    "hierarchyCycle": 409,
+    "invalidPayload": 400
+  }
+}

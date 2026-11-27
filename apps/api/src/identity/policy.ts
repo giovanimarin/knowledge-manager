@@ -30,7 +30,17 @@ export function localMember(actor: Actor) {
   return actor.member;
 }
 
-export function requireEnrollment(actor: Actor) {
+type PolicyActor =
+  | Extract<Actor, { kind: "service" }>
+  | {
+      kind: "member";
+      member: Pick<
+        Extract<Actor, { kind: "member" }>["member"],
+        "id" | "admin" | "require_mfa" | "totp_secret" | "stepped_up"
+      >;
+    };
+
+export function requireEnrollment(actor: PolicyActor) {
   if (
     actor.kind === "member" &&
     (actor.member.admin || actor.member.require_mfa) &&
@@ -42,7 +52,7 @@ export function requireEnrollment(actor: Actor) {
 export async function assess(
   tx: TenantTransaction,
   tenant: string,
-  actor: Actor,
+  actor: PolicyActor,
   request: {
     action: Action;
     resource: string | null;

@@ -12,13 +12,19 @@ const assetTypes = {
 const server = createServer(async (request, response) => {
   response.setHeader("X-Content-Type-Options", "nosniff");
   if (request.url?.startsWith("/v1/")) {
-    const abort = AbortSignal.timeout(8000);
+    const abort = AbortSignal.timeout(15000);
+    const limit =
+      /^\/v1\/wiki\/(import-jobs|pages\/[^/]+\/(?:attachments|uploads\/[^/]+))(?:\?|$)/.test(
+        request.url,
+      )
+        ? 12 * 1024 * 1024
+        : 100 * 1024;
     try {
       const chunks = [];
       let size = 0;
       for await (const chunk of request) {
         size += chunk.length;
-        if (size > 100 * 1024) {
+        if (size > limit) {
           response.writeHead(413).end();
           return;
         }

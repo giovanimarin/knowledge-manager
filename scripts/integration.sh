@@ -9,6 +9,8 @@ export KM_IDENTITY_KEY="$shared_key"
 export KM_DEPLOYMENT_MODE=shared
 artifacts="${KM_ARTIFACTS_DIR:-artifacts}"
 mkdir -p "$artifacts"
+export KM_SCAN_DIR="$scratch/scanner"
+export KM_CLAMD_SOCKET=/km-scan/clamd.sock
 
 use_project() {
   export COMPOSE_PROJECT_NAME="$prefix-$1"
@@ -27,10 +29,13 @@ cleanup() {
       compose down -v --remove-orphans >/dev/null 2>&1
     fi
   done
+  bash scripts/wiki-clamd.sh stop "$KM_SCAN_DIR"
+  if [[ -f "$KM_SCAN_DIR/clamd.log" ]]; then cp "$KM_SCAN_DIR/clamd.log" "$artifacts/clamd.log"; fi
   rm -rf -- "$scratch"
   exit "$status"
 }
 trap cleanup EXIT
+bash scripts/wiki-clamd.sh start "$KM_SCAN_DIR"
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
@@ -43,6 +48,7 @@ make setup
 echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
 node scripts/identity-integration.mjs primary "$scratch/identity"
+KM_WIKI_G3_REPORT="$artifacts/wiki-g3.json" node scripts/wiki-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
 compose up -d --wait --no-build --scale api=2 --scale worker=2
 for index in 1 2; do
   compose exec -T --index "$index" api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r=>{if(!r.ok) process.exit(1)})'
@@ -53,7 +59,7 @@ node scripts/identity-integration.mjs quota "$scratch/identity"
 node scripts/worker-integration.mjs "$scratch/identity" "$artifacts/worker-metrics.json"
 echo "Escala local: duas réplicas API e worker saudáveis com fila e PostgreSQL compartilhados"
 compose up -d --wait --no-build --scale api=1 --scale worker=1
-pnpm test:e2e
+KM_WIKI_BROWSER_FIXTURE="$scratch/wiki-browser" pnpm test:e2e
 node scripts/benchmark.mjs
 
 compose stop db
@@ -91,6 +97,7 @@ db -f /km-infra/v2-down.sql
 make setup
 [[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=2")" == 1 ]]
 [[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=3")" == 1 ]]
+[[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=4")" == 1 ]]
 echo "Upgrade e rollback v2 verificados preservando os fixtures do PKG-01"
 compose stop web worker api
 db -f /km-infra/rollback.sql
@@ -121,6 +128,7 @@ export KM_DEPLOYMENT_MODE=dedicated
 unset KM_IDENTITY_KEY
 make setup
 node scripts/identity-integration.mjs dedicated "$scratch/identity"
+node scripts/wiki-integration.mjs "$scratch/identity" "$scratch/wiki-browser" dedicated
 node scripts/worker-integration.mjs "$scratch/identity" "$artifacts/worker-metrics.json" cross
 make stop
 

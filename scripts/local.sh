@@ -35,11 +35,14 @@ JS
 }
 
 migrate() {
-  local checksum identity_checksum worker_checksum
+  local checksum identity_checksum worker_checksum wiki_checksum wiki_objects_checksum wiki_uploads_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
   identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
   worker_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v3-up.sql")).digest("hex"))')"
-  db -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
+  wiki_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v4-up.sql")).digest("hex"))')"
+  wiki_objects_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v5-up.sql")).digest("hex"))')"
+  wiki_uploads_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v6-up.sql")).digest("hex"))')"
+  db -v "wiki_uploads_checksum=$wiki_uploads_checksum" -v "wiki_objects_checksum=$wiki_objects_checksum" -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {
@@ -48,7 +51,7 @@ verify_fixture() {
     AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'km_app')
     AND EXISTS (SELECT FROM pg_policies WHERE schemaname='km' AND tablename='fixture_objects' AND policyname='fixture_isolation')
     FROM pg_class WHERE oid='km.fixture_objects'::regclass")" == t ]]
-  db -Atc 'SELECT id, checksum FROM km.fixture_objects ORDER BY tenant_id, id' | storage check
+  db -Atc "SELECT id::text, checksum FROM km.fixture_objects UNION ALL SELECT tenant_id::text||'/'||id::text,sha256 FROM km.wiki_attachments WHERE object_size IS NOT NULL" | storage check
 }
 
 setup() {
@@ -113,6 +116,11 @@ snapshot_dir() {
   node -e 'console.log(require("node:path").resolve(process.argv[1]))' "$1"
 }
 
+wiki_retention() {
+  local expired
+  expired="$(db -Atq -f /km-infra/wiki-retention.sql)"
+  printf '%s\n' "$expired" | storage prune
+}
 backup() (
   local dir scratch started
   dir="$(snapshot_dir "${1:-}")"
@@ -127,6 +135,7 @@ backup() (
   compose stop web worker api
   verify_fixture
   compose exec -T db pg_dump -Fc -U km_bootstrap -d km > "$scratch/database.dump"
+  db -Atc "SELECT tenant_id::text||'/'||id::text FROM km.wiki_attachments WHERE object_size IS NOT NULL" | storage reconcile
   storage snapshot > "$scratch/storage.json"
   node scripts/manifest.mjs create "$scratch"
   node scripts/manifest.mjs verify "$scratch"
@@ -170,7 +179,7 @@ restore() {
 command="${1:-}"
 shift || true
 case "$command" in
-  setup|start|stop|smoke|backup|restore|bootstrap)
+  setup|start|stop|smoke|backup|restore|bootstrap|wiki-retention)
     [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Projeto Compose inválido' >&2; exit 1; }
     lock="${TMPDIR:-/tmp}/km-compose-$COMPOSE_PROJECT_NAME.lock"
     mkdir "$lock" || { echo 'Outra operação está ativa para este projeto' >&2; exit 1; }
@@ -187,6 +196,7 @@ case "$command" in
   doctor) prerequisites ;;
   smoke) bash scripts/smoke.sh ;;
   backup) backup "$@" ;;
+  wiki-retention) wiki_retention ;;
   restore) restore "$@" ;;
   *) echo 'Operação desconhecida' >&2; exit 1 ;;
 esac

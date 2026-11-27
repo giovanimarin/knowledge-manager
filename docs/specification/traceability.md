@@ -109,3 +109,6 @@ As linhas acima são o índice de categorias. Antes de implementar, o PR de cont
 | DM-04.reconexao | RF-03 / U3 reconectar | C2, operação WS de ressincronização / CRDTUpdate / epoch atual | Reaplicar updates após queda; sessão revogada não recebe snapshot nem grava update. |
 
 Os nomes acima são exemplos de planejamento. Na entrega, preencher evidência por commit, ambiente e link da execução, com estado de validação local, sandbox ou produção. Registrar subcapacidades adiadas com disposição e fonte, sem marcá-las como testadas. Conferir itens órfãos, duplicados ou sem fixture e mapear subcapacidades compartilhadas entre pacotes ao responsável e aos consumidores. Usar T-{ID} como agrupador e IDs de fixture por subcapacidade. Aceite do pacote exige cobertura individual do escopo entregue, inclusive quando um teste cobre vários IDs identificados explicitamente.
+
+
+O [mapa de subcapacidades e testes do PKG-03](../packages/PKG-03-contracts.md#revisão-c2c3) vincula W2.1, W3.1/W3.2/W3.4 e W4.1/W4.2/W4.4 às decisões DM-06/08/09/15, aos contratos C2/C3 e à evidência local G3.

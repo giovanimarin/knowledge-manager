@@ -22,6 +22,10 @@ const unknown = Object.entries(licenses)
       !(
         license === "MPL-2.0" &&
         packages.every(({ name }) => mplReviewed.test(name))
+      ) &&
+      !(
+        license === "(MIT AND Zlib)" &&
+        packages.every(({ name }) => name === "pako")
       ),
   )
   .map(([license]) => license);

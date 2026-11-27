@@ -121,3 +121,55 @@ A tentativa de repetir toda a instalação no runner local foi interrompida por 
 - I1–I4 concluídos, 16/16 subtarefas verificadas, 100% no nível do pacote; CI obrigatório 3/3 verde na [execução 45929121586](https://github.com/giovanimarin/knowledge-manager/actions/runs/45929121586), incluindo regressão do PKG-01, shared A/B e dedicated C, concorrência worker/leases e negativos.
 - Progresso geral por pacotes aceitos: **2/18 (11,1%)**. Não é percentual de esforço, cobertura total do produto ou prontidão comercial.
 - Próximo PKG-03: organizar espaço, árvore, conteúdo, anexos, metadados, comentários, busca textual e segurança da wiki. Planejar marcos/subtarefas e publicar contratos/fixtures antes de implementar; integrar testes de regressão PKG-01/02. Não reabrir nem reduzir o escopo aprovado.
+
+## PKG-03 — plano de implementação
+
+Estimativa de 128–216 h do roadmap. O peso de cada marco é distribuído igualmente entre suas quatro subtarefas. Validação inicial 0/16. Aceite do pacote depende de revisão e dos gates aplicáveis.
+
+| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
+| --- | --- | --- |
+| W1 Espaços, acl e árvore · 30% | 38–64 h | W1.1 espaços e participação múltipla com negação padrão; W1.2 documentos e navegação multinível com IDs estáveis; W1.3 mover/duplicar sem ciclos nem mutação parcial e com verificação de origem/destino; W1.4 revogação ativa e isolamento A/B/C, inclusive em resultados derivados. |
+| W2 Interação e recuperação de conteúdo · 25% | 32–54 h | W2.1 threads ancoradas/gerais com histórico, resolução e menções autorizadas; W2.2 metadados por espaço, responsáveis, classificação e filtros; W2.3 backlinks, tipos, links quebrados e exploração autorizada; W2.4 busca textual com filtros e sem snippets ou contagens de documentos negados. |
+| W3 Arquivos e ciclo de vida · 30% | 38–66 h | W3.1 anexos e limites por empresa com validação, scan, visualização e download autorizado; W3.2 importação/exportação no escopo C3 com fixtures de fidelidade e manifesto de perdas; W3.3 templates com revisões independentes; W3.4 exclusão e restauração da subárvore/espaço, retenção e purga auditada. |
+| W4 Experiência e evidência · 15% | 20–32 h | W4.1 interface U3/U4 acessível e sem metadados negados; W4.2 contrato e integração reais com negativos por operação; W4.3 regressão 01/02 e três checks; W4.4 relatório com artefatos e medições G1/G2/G3 aplicáveis. |
+
+[Contratos e fixtures](packages/PKG-03-contracts.md) · [Matriz normativa](specification/traceability.md)
+
+## PKG-03 — execução parcial e evidências
+
+O PR #9 foi integrado em `25d1614` após os três checks do head aprovado passarem. O plano e as fixtures da wiki foram publicados em `d0ecfd3`, antes de `9e53159`. O [PR #10](https://github.com/giovanimarin/knowledge-manager/pull/10) concentra a implementação e suas validações. [Checks do PR #9](https://github.com/giovanimarin/knowledge-manager/actions/runs/45936011199)
+
+| Marco | Subtarefas com aceite comprovado | Evidências e pendências |
+| --- | --- | --- |
+| W1 | W1.1–W1.3 | Integração de espaços, múltiplos escopos, árvore, negação sem grant, ciclo e duplicação/movimento. W1.4 aguardava a prova C dedicada na rodada de referência. |
+| W2 | W2.3–W2.4 | Backlinks, links quebrados e ocultos, busca pt/en e negativos por autorização. Menções autorizadas e configuração de esquema foram acrescentadas posteriormente. Faltam testes de âncora órfã com blocos e evidência de cobertura de todos os filtros. |
+| W3 | W3.3 | Template versionado confirmado em REST, com páginas antigas preservadas. Quarentena passou, mas W3.1/W3.2 aguardam scan real, armazenamento privado e conversões/fidelidade. W3.4 tem restauração comprovada; a cobertura de purga e retenção requer a rodada posterior. |
+| W4 | W4.3 | Três checks, quatro cenários Playwright, regressões PKG-01/02 e auditoria/SBOM na rodada de referência. A cobertura de U3/U4, contratos e relatório G3 integral permanece aberta. |
+
+Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/4, W4 1/4). Pacotes aceitos **2/18**. A aprovação técnica do pacote permanece pendente.
+
+- Head `cf76cd4`: os três checks passaram e quatro cenários Playwright concluíram em **3,3 s**. Busca textual com 15 requisições por cenário: filtrada p50 **15,42 ms** / p95 **24,12 ms**; sem filtro p50 **29,80 ms** / p95 **56,70 ms**. Medições em fixtures Compose do CI. [Execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45995895935) · [Artefatos de integração](https://github.com/giovanimarin/knowledge-manager/actions/runs/45995895935/artifacts/15196685328)
+- O check de smoke da rodada `0c4463f` falhou no cenário negativo da purga porque o login usado ainda tinha step-up da matrícula. O ajuste `e9f4f71` zera a elevação antes da negação esperada e a prepara explicitamente para a purga autorizada. Nenhum teste foi omitido. [Falha da fixture](https://github.com/giovanimarin/knowledge-manager/actions/runs/45996201070)
+- [Contrato e roteiro](packages/PKG-03-contracts.md) registram a fronteira do que foi entregue e as lacunas a fechar. Os requisitos aprovados permanecem na matriz normativa.
+
+### Revalidação do código
+
+- Em `cca33a5`, os três checks passaram. O smoke confirmou leitura e escrita negadas entre C dedicado e o conteúdo shared, além de revogação em sessão ativa e isolamento de A/B. W1.4 concluída. O cenário de metadados verificou schema de espaço, edição e busca sob ACL. W2.2 concluída.
+- Quatro cenários Playwright passaram em **3,6 s** com as regressões da fundação e identidade. O `pnpm verify` local executou **10 testes** sem falhas nem omissões. O benchmark filtrado mediu p50 **7,99 ms** e p95 **10,82 ms**, e o não filtrado p50 **16,41 ms** e p95 **18,94 ms**, com 15 requisições por cenário.
+- Validação ponderada **60%** (W1 4/4, W2 3/4, W3 1/4, W4 1/4). Purga manual e tombstone foram testados; cobertura da retenção automática e reconciliação de backups ainda pendentes. O pacote continua em revisão, com **2/18** pacotes aceitos. [Três checks do código](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503) · [Artefatos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503/artifacts/15196053824)
+
+### Revisão técnica do PR #10
+
+**Gates locais verificados 16/16 · 100% ponderado.** O aceite do mantenedor e os gates de sandbox permanecem distintos. Pacotes formalmente aceitos **2/18** até a revisão e integração do PKG-03.
+
+| Subtarefa | Evidência de conclusão |
+| --- | --- |
+| W2.1 | `b090083`, `ab12516`, `01dc1e9`. IDs de bloco sobrevivem à reordenação, a remoção deixa a âncora identificável, e o teste cobre histórico, resolução, menções e revogação. O browser exercita a seleção da âncora e o histórico. |
+| W3.1 | `b090083`, `6c00cfc`, `5b2474a`. ClamAV **1.5.4** no runner descartável. Falha do daemon mantém quarentena, reanálise libera o arquivo limpo, a assinatura local bloqueia a amostra sintética, e ACL, checksum, quota e replay são exercitados. A v5 move novos bytes para o volume privado e a v6 vincula o upload ao principal. |
+| W3.2 | `0064c28`, `fb51d45`, `6be9535`, `5b2474a`. Round trips Word/PDF/ZIP, HTML sanitizado, Markdown, referências e anexos de pacote Notion, pacote Confluence e manifestos de perdas. A fixture local não comprova interoperabilidade com os serviços externos. |
+| W3.4 | `a0aaf52`, `6be9535`. Restauração da subárvore e bytes, expiração da janela, auditoria da purga, tombstones e remoção física. Backup e restore passaram, com reconciliação de exclusões definitivas entre snapshots no PKG-14. |
+| W4.1/W4.2/W4.4 | `5b2474a`. Cinco cenários Playwright, incluindo U3 e U4 com negativa autenticada em outro espaço. Operações C2/C3 verificadas no contrato, integração e unitários. O relatório G3 registra filtros, busca, scan, ACL, formatos e retenção. |
+
+Em `5b2474a`, os três checks passaram com as regressões 01/02 e isolamento shared/dedicated. O Playwright passou **5/5 em 4,1 s**. Backup em **10 s**, restauração em **15 s**. Com 15 requisições por cenário, busca filtrada p50 **18,06 ms** / p95 **22,80 ms** e sem filtro p50 **48,56 ms** / p95 **55,95 ms**. São medições em fixtures descartáveis. `pnpm verify` local executou 15 testes em **4,99 s**, sem omissões. [Run](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298) · [Relatórios, G3 e ClamAV](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298/artifacts/15198533115)
+
+Rodadas intermediárias expuseram problemas de licença transitiva, advisories e fixtures U4. O npm foi atualizado, a expressão permissiva MIT + Zlib foi revisada para pako, e o contrato do seletor acessível e a resolução de caminhos de arquivos raiz foram corrigidos. O PDF usa um worker local limitado, sem dependência de binário externo na imagem. [Runbook](packages/PKG-03-runbook.md) · [Contrato e matriz por subcapacidade](packages/PKG-03-contracts.md)
