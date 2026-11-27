@@ -95,7 +95,7 @@ test("Graph continuation or download cannot move credentials to an unrelated hos
           "@odata.nextLink": "https://elsewhere.invalid/",
         }),
     }),
-    /Cross-origin/,
+    /continuation outside source/,
   );
   const source = await cloudSource({
     provider: "onedrive",
@@ -142,5 +142,55 @@ test("S3 fixture keeps strong validators from listing to reads", async () => {
       client: { send: async () => ({ IsTruncated: true }) },
     }),
     /Truncated/,
+  );
+});
+
+test("Graph delta resumes exact source, keeps tombstones and fails closed on native ACL", async () => {
+  const path = "/v1.0/drives/fixtures/root/delta";
+  const changed = {
+    id: "x",
+    file: {},
+    eTag: "unchanged-etag",
+    name: "guide.txt",
+    "@microsoft.graph.downloadUrl": "https://org.sharepoint.com/asset",
+  };
+  const request = async (url) => {
+    if (url.pathname === path) {
+      assert.equal(url.searchParams.get("token"), "stored");
+      return Response.json({
+        value: [changed, { id: "gone", deleted: {} }],
+        "@odata.deltaLink":
+          "https://graph.microsoft.com" + path + "?token=next",
+      });
+    }
+    assert.match(url.pathname, /\/items\/x\/permissions$/);
+    return Response.json({
+      value: [{ grantedToV2: { user: { id: "native-user" } } }],
+    });
+  };
+  const options = {
+    provider: "onedrive",
+    container: "fixtures",
+    nativeCursor: "https://graph.microsoft.com" + path + "?token=stored",
+    principalIds: ["native-user"],
+    request,
+  };
+  const resumed = await cloudSource(options);
+  assert.equal(resumed.delta, true);
+  assert.deepEqual(resumed.removed, ["gone"]);
+  assert.match(resumed.checkpoint, /token=next$/);
+  assert.equal(await resumed.allowsSpace(resumed.files[0]), true);
+  assert.equal(
+    await (
+      await cloudSource({ ...options, principalIds: ["unknown-user"] })
+    ).allowsSpace(resumed.files[0]),
+    false,
+  );
+  await assert.rejects(
+    cloudSource({
+      ...options,
+      nativeCursor: "https://graph.microsoft.com/v1.0/me",
+    }),
+    /outside source/,
   );
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 const require = createRequire(
   new URL("../apps/api/package.json", import.meta.url),
 );
@@ -548,6 +548,135 @@ try {
       (row) => row.block_id === captured.id,
     ),
   );
+  const connectionPath = syncRoute + "/connection";
+  const hookPath = base + "/v1/ingestion/hooks/" + tenant + "/" + connector.id;
+  const webhookSecret = randomBytes(32).toString("hex");
+  const content = JSON.stringify({ ref: "refs/heads/main" });
+  async function hook(secret, deliveryId, payload = content, url = hookPath) {
+    return (
+      await fetch(url, {
+        method: "POST",
+        body: payload,
+        signal: AbortSignal.timeout(6000),
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-Delivery": deliveryId,
+          "X-Hub-Signature-256":
+            "sha256=" +
+            createHmac("sha256", secret).update(payload).digest("hex"),
+        },
+      })
+    ).status;
+  }
+  db(`update km.session_families set step_until=now()+interval '10 minutes'
+    where tenant_id='${tenant}' and member_id='${adminMemberA}'`);
+  const connection = await request("PUT", connectionPath, {
+    provider: "github",
+    webhookSecret,
+  });
+  assert.equal(connection.credentialVersion, 1);
+  assert.deepEqual(await request("GET", connectionPath), {
+    provider: "github",
+    credentialVersion: 1,
+    revoked: false,
+  });
+  assert.equal(await hook("wrong", randomUUID()), 401);
+  assert.equal(
+    await hook(
+      webhookSecret,
+      randomUUID(),
+      content,
+      hookPath.replace(tenant, randomUUID()),
+    ),
+    404,
+  );
+  const delivery = randomUUID();
+  assert.deepEqual(
+    await Promise.all([
+      hook(webhookSecret, delivery),
+      hook(webhookSecret, delivery),
+    ]),
+    [200, 200],
+  );
+  assert.equal(await hook(webhookSecret, randomUUID()), 200);
+  assert.equal(await hook(webhookSecret, delivery, "{}"), 409);
+  assert.equal((await request("GET", syncRoute + "/signals")).length, 1);
+  const changed = {
+    id: randomUUID(),
+    cursor: "p2",
+    nextCursor: "p3",
+    credentialVersion: 1,
+    nativeCheckpoint: { before: null, after: "native-1" },
+    signals: [delivery],
+    entries: [{ ...remote, remoteKey: "revocable" }],
+  };
+  await request("POST", syncRoute + "/sync", changed);
+  assert.deepEqual(await request("GET", syncRoute + "/signals"), []);
+  const inventory = await request("GET", syncRoute + "/objects");
+  assert.equal(inventory.nativeCursor, "native-1");
+  const revocable = inventory.objects.find(
+    (item) => item.remote_key === "revocable",
+  ).page_id;
+  const sourcePage = await request("GET", "/wiki/pages/" + revocable);
+  await request("POST", "/editor/pages/" + revocable + "/publication", {
+    revision: sourcePage.revision,
+    expectedRevision: sourcePage.revision,
+  });
+  await untilIngest(
+    async () =>
+      (await request("GET", "/ingestion/pages/" + revocable + "/chunks"))
+        .length,
+    "connector source was not indexed",
+  );
+  const secondSecret = randomBytes(32).toString("hex");
+  assert.equal(
+    (
+      await request("PUT", connectionPath, {
+        provider: "github",
+        webhookSecret: secondSecret,
+      })
+    ).credentialVersion,
+    2,
+  );
+  assert.equal(await hook(webhookSecret, randomUUID()), 401);
+  assert.equal(await hook(secondSecret, randomUUID()), 200);
+  await request(
+    "POST",
+    syncRoute + "/sync",
+    { ...changed, id: randomUUID(), cursor: "p3", nextCursor: "p4" },
+    adminA,
+    409,
+  );
+  await request(
+    "POST",
+    syncRoute + "/sync",
+    {
+      ...changed,
+      id: randomUUID(),
+      cursor: "p3",
+      nextCursor: "p4",
+      credentialVersion: 2,
+    },
+    adminA,
+    409,
+  );
+  await request("DELETE", connectionPath);
+  assert.equal(await hook(secondSecret, randomUUID()), 404);
+  await request("GET", "/wiki/pages/" + revocable, undefined, adminA, 404);
+  await request(
+    "GET",
+    "/ingestion/pages/" + revocable + "/chunks",
+    undefined,
+    adminA,
+    404,
+  );
+  await untilIngest(
+    () =>
+      db(
+        `select count(*) from km.ingest_generations where tenant_id='${tenant}' and page_id='${revocable}'`,
+      ) === "0",
+    "revoked source derivatives survived",
+  );
   const profileRoute = "/ingestion/profiles";
   const model = process.env.KM_INGEST_EMBED_MODEL;
   const dimension = Number(process.env.KM_INGEST_EMBED_DIMENSION);
@@ -638,6 +767,7 @@ try {
       "deduplication",
       "withdrawal",
       "source-cursor",
+      "signed-webhook-replay-rotation-revocation",
     ],
   };
   if (process.env.KM_INGEST_G3_REPORT)

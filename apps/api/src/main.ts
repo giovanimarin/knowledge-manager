@@ -45,6 +45,7 @@ async function main() {
     FoundationModule,
     {
       logger: ["warn", "error"],
+      rawBody: true,
     },
   );
   api.useBodyParser("json", { limit: "12mb" });

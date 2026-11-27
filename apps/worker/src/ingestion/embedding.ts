@@ -11,7 +11,7 @@ export function configuredEmbedding(env = process.env, request = fetch) {
       dimension: 64,
       vector: async (content: string) => embed(content),
     };
-  const destination = new URL(endpoint ?? "http://localhost");
+  const destination = new URL(endpoint || "http://localhost");
   if (
     !["http:", "https:"].includes(destination.protocol) ||
     destination.username ||

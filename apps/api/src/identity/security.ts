@@ -83,13 +83,13 @@ export function parseToken(value: unknown, kinds: string[]) {
   return { tenant: tenant.toLowerCase(), digest: digest(value), kind };
 }
 
-const key = () =>
+const key = (purpose: string) =>
   new Uint8Array(
     hkdfSync(
       "sha256",
       process.env.KM_IDENTITY_KEY || required("PGPASSWORD"),
       "knowledge-manager",
-      "identity-totp-v1",
+      purpose,
       32,
     ),
   );
@@ -103,13 +103,13 @@ export const totp = (encoded: string, email: string) =>
     secret: Secret.fromBase32(encoded),
   });
 export const newSecret = () => new Secret({ size: 20 }).base32;
-export async function seal(secret: string) {
+export async function seal(secret: string, purpose = "identity-totp-v1") {
   return new CompactEncrypt(Buffer.from(secret))
     .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
-    .encrypt(key());
+    .encrypt(key(purpose));
 }
-export async function unseal(encoded: string) {
-  const result = await compactDecrypt(encoded, key(), {
+export async function unseal(encoded: string, purpose = "identity-totp-v1") {
+  const result = await compactDecrypt(encoded, key(purpose), {
     keyManagementAlgorithms: ["dir"],
     contentEncryptionAlgorithms: ["A256GCM"],
   });

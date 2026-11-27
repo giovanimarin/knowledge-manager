@@ -35,7 +35,7 @@ export class IdentityController {
 
   @All("*path")
   async handle(
-    @Req() req: IncomingMessage,
+    @Req() req: IncomingMessage & { rawBody?: Buffer },
     @Res() res: ServerResponse,
     @Body() raw: unknown,
   ) {
@@ -81,7 +81,19 @@ export class IdentityController {
     }
   }
 
-  private async dispatch(req: IncomingMessage, pathname: string, raw: unknown) {
+  private async dispatch(
+    req: IncomingMessage & { rawBody?: Buffer },
+    pathname: string,
+    raw: unknown,
+  ) {
+    const hook = /^\/v1\/ingestion\/hooks\/([^/]+)\/([^/]+)$/.exec(pathname);
+    if (hook && req.method === "POST")
+      return this.sessions.ingestionHook(
+        id(hook[1]),
+        id(hook[2]),
+        req.headers,
+        req.rawBody,
+      );
     const key = `${req.method} ${pathname}`;
     const body =
       ["POST", "PUT", "PATCH"].includes(req.method ?? "") ||

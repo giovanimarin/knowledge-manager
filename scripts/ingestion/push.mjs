@@ -5,6 +5,7 @@ export async function pushSnapshot({
   base,
   session,
   mapped,
+  signals = [],
 }) {
   const prefix = "/v1/ingestion/sources/" + source;
   async function api(path, body) {
@@ -26,14 +27,21 @@ export async function pushSnapshot({
   }
   const records = [];
   let after;
-  let cursor;
+  let cursor, nativeCursor, credentialVersion;
   for (let page = 0; page < 10; page++) {
     const result = await api(
       "/objects" + (after ? "?after=" + encodeURIComponent(after) : ""),
     );
-    if (page && cursor !== result.cursor)
+    if (
+      page &&
+      (cursor !== result.cursor ||
+        nativeCursor !== result.nativeCursor ||
+        credentialVersion !== result.credentialVersion)
+    )
       throw new Error("Concurrent import changed the inventory");
     cursor = result.cursor;
+    nativeCursor = result.nativeCursor;
+    credentialVersion = result.credentialVersion;
     records.push(...result.objects);
     after = result.after;
     if (!after) break;
@@ -44,11 +52,17 @@ export async function pushSnapshot({
 
   const pending = [];
   for (const [key, object] of prior)
-    if (!latest.has(key) && object.state !== "deleted")
+    if (
+      (snapshot.delta ? snapshot.removed?.includes(key) : !latest.has(key)) &&
+      object.state !== "deleted"
+    )
       pending.push({ remoteKey: key, version: "deleted", operation: "delete" });
   for (const file of snapshot.files) {
     const previous = prior.get(file.remoteKey);
-    const expectedState = mapped ? "draft" : "quarantine";
+    const allowed = snapshot.allowsSpace
+      ? await snapshot.allowsSpace(file)
+      : mapped;
+    const expectedState = allowed ? "draft" : "quarantine";
     if (previous?.version === file.version && previous.state === expectedState)
       continue;
     const title = (
@@ -56,7 +70,7 @@ export async function pushSnapshot({
       file.remoteKey.split("/").at(-1) ||
       file.remoteKey
     ).slice(0, 160);
-    const content = mapped ? await snapshot.read(file) : "";
+    const content = allowed ? await snapshot.read(file) : "";
     if (content.length > 50000)
       throw new Error("Source content exceeds bounds");
     pending.push({
@@ -64,17 +78,33 @@ export async function pushSnapshot({
       title,
       content,
       operation: "upsert",
-      acl: mapped ? "mapped-space" : "unknown",
+      acl: allowed ? "mapped-space" : "unknown",
     });
   }
   cursor ??= null;
-  for (let offset = 0; offset < pending.length; offset += 10) {
+  if (snapshot.delta && snapshot.before !== nativeCursor)
+    throw new Error("Concurrent import changed the provider checkpoint");
+  const checkpoint =
+    credentialVersion &&
+    snapshot.checkpoint &&
+    snapshot.checkpoint !== nativeCursor
+      ? { before: nativeCursor ?? null, after: snapshot.checkpoint }
+      : null;
+  const length = Math.max(pending.length, checkpoint || signals.length ? 1 : 0);
+  for (let offset = 0; offset < length; offset += 10) {
     const nextCursor = randomUUID();
     await api("/sync", {
       id: randomUUID(),
       cursor,
       nextCursor,
       entries: pending.slice(offset, offset + 10),
+      ...(credentialVersion ? { credentialVersion } : {}),
+      ...(offset + 10 >= length
+        ? {
+            ...(checkpoint ? { nativeCheckpoint: checkpoint } : {}),
+            ...(signals.length ? { signals } : {}),
+          }
+        : {}),
     });
     cursor = nextCursor;
   }

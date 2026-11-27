@@ -3,6 +3,8 @@ import { sql } from "@km/foundation";
 import { EditorStore } from "../editor/store.js";
 import { IdentityError, id, input, string } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
+import { manageConnection, type Connection } from "./connection.js";
+import { Lifecycle } from "../editor/lifecycle.js";
 import { Wiki } from "../wiki/wiki.js";
 
 const missing = () => new IdentityError(404);
@@ -36,20 +38,30 @@ export async function sources(
     return { id: source };
   }
   const request =
-    /^\/v1\/ingestion\/sources\/([^/]+)(?:\/(sync|objects))?$/.exec(path);
+    /^\/v1\/ingestion\/sources\/([^/]+)(?:\/(sync|objects|connection|signals))?$/.exec(
+      path,
+    );
   if (!request) throw missing();
   const source = id(request[1]);
   if (method !== "GET") await store.lock();
   const connection = (
-    await sql<{
-      space_id: string;
-      cursor: string | null;
-    }>`select s.space_id,s.cursor from km.ingest_sources s
+    await sql<Connection>`select s.space_id,s.cursor,s.native_cursor,s.provider,s.credential_version,s.revoked_at from km.ingest_sources s
     join km.wiki_spaces w on (w.tenant_id,w.id)=(s.tenant_id,s.space_id)
     where s.id=${source} and w.deleted_batch is null`.execute(store.tx)
   ).rows[0];
   if (!connection) throw missing();
   await store.require("knowledge.govern", connection.space_id);
+  if (request[2] === "connection")
+    return manageConnection(store, source, connection, method, body);
+  if (connection.revoked_at) throw missing();
+  if (method === "GET" && request[2] === "signals") {
+    await store.require("content.acl.manage", connection.space_id);
+    return (
+      await sql`select delivery,received_at from km.ingest_signals
+      where source_id=${source} and credential_version=${connection.credential_version} and processed_at is null
+      order by received_at,delivery limit 100`.execute(store.tx)
+    ).rows;
+  }
   if (method === "GET" && request[2] === "objects") {
     const next = query.get("after");
     if (next !== null) string(next, 400);
@@ -71,6 +83,12 @@ export async function sources(
     }
     return {
       cursor: connection.cursor,
+      ...(connection.provider
+        ? {
+            nativeCursor: connection.native_cursor,
+            credentialVersion: connection.credential_version,
+          }
+        : {}),
       objects: safe,
       after: found.length > 100 ? found[99]?.remote_key : null,
     };
@@ -81,10 +99,38 @@ export async function sources(
     cursor = string(body.nextCursor, 512);
   const expected = body.cursor == null ? null : string(body.cursor, 512);
   if (expected === cursor) throw invalid();
+  if (
+    connection.provider &&
+    body.credentialVersion !== connection.credential_version
+  )
+    throw new IdentityError(409);
+  const checkpoint =
+    body.nativeCheckpoint == null ? null : input(body.nativeCheckpoint);
+  if (checkpoint && !connection.provider) throw invalid();
+  const nativeBefore =
+    checkpoint?.before == null ? null : string(checkpoint.before, 4096);
+  const nativeAfter = checkpoint ? string(checkpoint.after, 4096) : null;
+  const signals = body.signals == null ? [] : body.signals;
+  if (
+    !Array.isArray(signals) ||
+    signals.length > 100 ||
+    (signals.length && !connection.provider)
+  )
+    throw invalid();
+  const deliveries = [...new Set(signals.map(id))];
   const entries = body.entries;
   if (!Array.isArray(entries) || entries.length > 50) throw invalid();
   const digest = createHash("sha256")
-    .update(JSON.stringify({ expected, cursor, entries }))
+    .update(
+      JSON.stringify({
+        expected,
+        cursor,
+        entries,
+        nativeBefore,
+        nativeAfter,
+        deliveries,
+      }),
+    )
     .digest("hex");
   const earlier = (
     await sql<{
@@ -98,7 +144,11 @@ export async function sources(
     if (earlier.digest !== digest) throw new IdentityError(409);
     return { id: batch, count: earlier.count, replayed: true };
   }
-  if (connection.cursor !== expected) throw new IdentityError(409);
+  if (
+    connection.cursor !== expected ||
+    (checkpoint && connection.native_cursor !== nativeBefore)
+  )
+    throw new IdentityError(409);
   const wiki = new Wiki(store.tx, store.tenant, store.actor);
   const seen = new Set<string>();
   for (const raw of entries) {
@@ -125,10 +175,6 @@ export async function sources(
           : "quarantine";
     let page = prior?.page_id ?? null;
     if (state !== "draft" && page) {
-      await sql`insert into km.ingest_origin_denials(tenant_id,page_id) values(${store.tenant},${page}) on conflict do nothing`.execute(
-        store.tx,
-      );
-
       const live = (
         await sql`select 1 from km.wiki_pages where id=${page} and deleted_batch is null`.execute(
           store.tx,
@@ -141,6 +187,10 @@ export async function sources(
           {},
           new URLSearchParams(),
         );
+      await sql`insert into km.ingest_origin_denials(tenant_id,page_id) values(${store.tenant},${page}) on conflict do nothing`.execute(
+        store.tx,
+      );
+
       page = null;
     }
     if (state === "draft" && (!page || prior?.version !== version)) {
@@ -156,6 +206,7 @@ export async function sources(
           ).rows[0]
         : undefined;
       if (live && page) {
+        await new Lifecycle(store).withdraw(page);
         await wiki.dispatch(
           "PATCH",
           "/v1/wiki/pages/" + page,
@@ -177,7 +228,11 @@ export async function sources(
       store.tx,
     );
   }
-  await sql`update km.ingest_sources set cursor=${cursor} where id=${source}`.execute(
+  if (deliveries.length)
+    await sql`update km.ingest_signals set processed_at=now() where source_id=${source}
+      and credential_version=${connection.credential_version} and delivery=any(${deliveries}::text[])
+      and processed_at is null`.execute(store.tx);
+  await sql`update km.ingest_sources set cursor=${cursor},native_cursor=coalesce(${nativeAfter},native_cursor) where id=${source}`.execute(
     store.tx,
   );
   await sql`insert into km.ingest_sync_receipts(tenant_id,source_id,id,digest,count)

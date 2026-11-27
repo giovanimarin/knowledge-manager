@@ -38,6 +38,8 @@ export async function cloudSource({
   container,
   origin = defaults[provider],
   credential,
+  nativeCursor,
+  principalIds = [],
   request = fetch,
 }) {
   if (
@@ -63,6 +65,8 @@ export async function cloudSource({
     upstream.hash
   )
     throw new Error("Invalid upstream origin");
+  const delta = !!nativeCursor && ["sharepoint", "onedrive"].includes(provider);
+  const removed = new Set();
   const files = [],
     body = new Map();
   const visited = new Set();
@@ -95,6 +99,12 @@ export async function cloudSource({
       method,
       headers: {
         Accept: json ? "application/json" : "text/plain",
+        ...(!signed && ["sharepoint", "onedrive"].includes(provider)
+          ? {
+              Prefer:
+                "deltashowsharingchanges, deltashowremovedasdeleted, deltatraversepermissiongaps",
+            }
+          : {}),
         ...(!signed && credential ? { Authorization: credential } : {}),
         ...(provider === "notion" ? { "Notion-Version": "2022-06-28" } : {}),
         ...(params ? { "Content-Type": "application/json" } : {}),
@@ -178,15 +188,33 @@ export async function cloudSource({
     } while (token);
   } else if (provider === "sharepoint" || provider === "onedrive") {
     // A complete snapshot avoids interpreting a partial delta page as a deletion.
-    let next = "/v1.0/drives/" + scope + "/root/delta";
+    const initial = "/v1.0/drives/" + scope + "/root/delta";
+    let next = nativeCursor ?? initial;
+    function checkedLink(value) {
+      const parsed = new URL(validString(value), upstream);
+      if (
+        parsed.origin !== upstream.origin ||
+        parsed.pathname !== initial ||
+        parsed.username ||
+        parsed.password ||
+        parsed.hash
+      )
+        throw new Error("Graph continuation outside source");
+      return parsed.href;
+    }
     while (next) {
       cursor(next);
-      const result = await get(next);
+      const result = await get(
+        delta || next !== initial ? checkedLink(next) : next,
+      );
       if (!Array.isArray(result.value))
         throw new Error("Incomplete Graph inventory");
       for (const file of result.value) {
-        if (file.deleted || !file.file || !plainFile.test(file.name ?? ""))
+        if (!file.file && !file.deleted) continue;
+        if (file.deleted || !plainFile.test(file.name ?? "")) {
+          if (delta) removed.add(validString(file.id));
           continue;
+        }
         remember(
           validString(file.id),
           validString(file.eTag ?? file.cTag),
@@ -254,6 +282,57 @@ export async function cloudSource({
   return {
     files,
     checkpoint,
+    delta,
+    removed: [...removed],
+    async allowsSpace(file) {
+      if (!principalIds.length) return false;
+      const expected = new Set(principalIds);
+      let grants;
+      try {
+        if (provider === "drive") {
+          const result = await get(
+            "/drive/v3/files/" +
+              encodeURIComponent(file.remoteKey) +
+              "/permissions?fields=nextPageToken,permissions(id,type,role,deleted,permissionDetails)&supportsAllDrives=true",
+          );
+          if (result.nextPageToken || !Array.isArray(result.permissions))
+            return false;
+          grants = result.permissions.map((permission) =>
+            permission.type === "user" &&
+            !permission.deleted &&
+            !permission.permissionDetails?.some((detail) => detail.inherited)
+              ? permission.id
+              : null,
+          );
+        } else if (provider === "sharepoint" || provider === "onedrive") {
+          const result = await get(
+            "/v1.0/drives/" +
+              scope +
+              "/items/" +
+              encodeURIComponent(file.remoteKey) +
+              "/permissions",
+          );
+          if (result["@odata.nextLink"] || !Array.isArray(result.value))
+            return false;
+          grants = result.value.map((permission) =>
+            !permission.inheritedFrom &&
+            !permission.link &&
+            !permission.invitation &&
+            !permission.expirationDateTime &&
+            !permission.grantedToIdentitiesV2?.length
+              ? permission.grantedToV2?.user?.id
+              : null,
+          );
+        } else return false;
+      } catch {
+        return false;
+      }
+      const actual = new Set(grants);
+      return (
+        actual.size === expected.size &&
+        [...actual].every((principal) => expected.has(principal))
+      );
+    },
     async read(file) {
       const item = body.get(file.remoteKey);
       if (typeof item === "string") return get(item, { json: false });

@@ -1,3 +1,5 @@
+import type { IncomingHttpHeaders } from "node:http";
+import { acceptHook } from "../ingestion/hooks.js";
 import { randomUUID, randomBytes } from "node:crypto";
 import { Dependencies, sql, type TenantTransaction } from "@km/foundation";
 import {
@@ -281,6 +283,18 @@ export class Sessions {
         );
       return operation(tx, t.tenant, { kind: "member", member: principal });
     });
+  }
+
+  async ingestionHook(
+    tenant: string,
+    source: string,
+    headers: IncomingHttpHeaders,
+    raw: Buffer | undefined,
+  ) {
+    await this.limit(tenant, `ingestion-hook:${source}`, 60);
+    return this.dependencies.inTenant(tenant, (tx) =>
+      acceptHook(tx, tenant, source, headers, raw),
+    );
   }
 
   async refresh(value: unknown) {
