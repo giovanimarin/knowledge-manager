@@ -6,6 +6,7 @@ export KM_WEB_PORT="${KM_WEB_PORT:-3108}"
 export KM_BASE_URL="http://127.0.0.1:$KM_WEB_PORT"
 shared_key="$(node -e 'console.log(require("node:crypto").randomBytes(32).toString("hex"))')"
 export KM_IDENTITY_KEY="$shared_key"
+export KM_DEPLOYMENT_MODE=shared
 artifacts="${KM_ARTIFACTS_DIR:-artifacts}"
 mkdir -p "$artifacts"
 
@@ -114,6 +115,7 @@ echo "Backup incompleto recusado; aplicação permaneceu indisponível"
 
 
 use_project dedicated
+export KM_DEPLOYMENT_MODE=dedicated
 unset KM_IDENTITY_KEY
 make setup
 node scripts/identity-integration.mjs dedicated "$scratch/identity"
@@ -121,6 +123,7 @@ make stop
 
 use_project source
 export KM_IDENTITY_KEY="$shared_key"
+export KM_DEPLOYMENT_MODE=shared
 make start
 node scripts/identity-integration.mjs cross "$scratch/identity"
 make stop

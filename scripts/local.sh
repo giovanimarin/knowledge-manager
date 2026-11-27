@@ -63,6 +63,8 @@ setup() {
 
 bootstrap() {
   local name="${1:-}" email="${2:-}" display="${3:-}" plain encoded organization member
+  local deployment="${KM_DEPLOYMENT_MODE:-shared}"
+  [[ "$deployment" == shared || "$deployment" == dedicated ]]
   [[ -n "$name" && "$email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ && -n "$display" ]]
   if [[ -t 0 ]]; then
     read -r -s -p "Senha inicial (mínimo 12 caracteres): " plain
@@ -74,9 +76,17 @@ bootstrap() {
   unset plain
   organization="$(node -e 'console.log(require("node:crypto").randomUUID())')"
   member="$(node -e 'console.log(require("node:crypto").randomUUID())')"
-  db -q -v "organization=$organization" -v "member=$member" -v "name=$name" -v "email=$email" -v "display=$display" -v "encoded=$encoded" <<'SQL'
+  db -q -v "organization=$organization" -v "member=$member" -v "name=$name" -v "email=$email" -v "display=$display" -v "encoded=$encoded" -v "deployment=$deployment" <<'SQL'
 BEGIN;
+SELECT pg_advisory_xact_lock(71189002);
+INSERT INTO km.deployment_identity (singleton,mode) VALUES (true,:'deployment') ON CONFLICT DO NOTHING;
+SELECT mode=:'deployment' AND dedicated_tenant IS NULL AS permitted FROM km.deployment_identity WHERE singleton \gset
+\if :permitted
+\else
+  DO $$ BEGIN RAISE EXCEPTION 'Deployment mode mismatch or dedicated tenant already provisioned'; END $$;
+\endif
 INSERT INTO km.organizations (tenant_id,name) VALUES (:'organization',:'name');
+UPDATE km.deployment_identity SET dedicated_tenant=:'organization' WHERE mode='dedicated';
 INSERT INTO km.memberships (tenant_id,id,email,name,password_hash,admin)
 VALUES (:'organization',:'member',lower(:'email'),:'display',:'encoded',true);
 INSERT INTO km.identity_roles (tenant_id,id,name,actions,require_mfa)

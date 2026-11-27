@@ -375,6 +375,19 @@ async function primary() {
 async function dedicated() {
   const a = JSON.parse(readFileSync(file, "utf8"));
   const c = bootstrap("Empresa C", "admin-c@example.invalid", "Admin C");
+  const second = spawnSync(
+    "bash",
+    [
+      "scripts/local.sh",
+      "bootstrap",
+      "Outro tenant",
+      "other@example.invalid",
+      "Outro",
+    ],
+    { input: password + "\n", encoding: "utf8", env: process.env },
+  );
+  assert.notEqual(second.status, 0);
+  assert.match(second.stderr, /dedicated tenant already provisioned/);
   const { accessToken } = await start(
     login(c.tenant, "admin-c@example.invalid", password),
   );

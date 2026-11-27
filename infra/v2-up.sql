@@ -7,6 +7,14 @@ CREATE TABLE km.organizations (
   require_mfa boolean NOT NULL DEFAULT false
 );
 
+-- Operator-only routing configuration for this deployment.
+CREATE TABLE km.deployment_identity (
+  singleton boolean PRIMARY KEY CHECK (singleton),
+  mode text NOT NULL CHECK (mode IN ('shared','dedicated')),
+  dedicated_tenant uuid REFERENCES km.organizations,
+  CHECK (mode='dedicated' OR dedicated_tenant IS NULL)
+);
+
 CREATE TABLE km.memberships (
   tenant_id uuid NOT NULL REFERENCES km.organizations,
   id uuid NOT NULL,
