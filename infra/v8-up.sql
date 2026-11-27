@@ -53,13 +53,22 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION km.ingest_capture() FROM PUBLIC;
 CREATE TRIGGER ingest_capture AFTER INSERT ON km.editor_outbox FOR EACH ROW EXECUTE FUNCTION km.ingest_capture();
+CREATE TABLE km.ingest_origin_denials (
+ tenant_id uuid NOT NULL REFERENCES km.organizations, page_id uuid NOT NULL,
+ denied_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,page_id)
+);
+ALTER TABLE km.ingest_origin_denials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE km.ingest_origin_denials FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_scope ON km.ingest_origin_denials USING (tenant_id=nullif(current_setting('km.tenant_id',true),'')::uuid);
+GRANT SELECT,INSERT ON km.ingest_origin_denials TO km_app;
 CREATE VIEW km.ingest_eligible WITH (security_invoker=true) AS
  SELECT g.* FROM km.ingest_generations g
  JOIN km.editor_publications p ON (p.tenant_id,p.page_id,p.id,p.revision)=(g.tenant_id,g.page_id,g.publication_id,g.revision)
  JOIN km.wiki_pages w ON (w.tenant_id,w.id)=(g.tenant_id,g.page_id)
  JOIN km.organizations o ON o.tenant_id=g.tenant_id
  WHERE p.withdrawn_at IS NULL AND (p.expires_at IS NULL OR p.expires_at>statement_timestamp())
- AND w.deleted_batch IS NULL AND o.state='active';
+ AND w.deleted_batch IS NULL AND o.state='active' AND NOT EXISTS(SELECT 1 FROM km.ingest_origin_denials d
+ WHERE (d.tenant_id,d.page_id)=(g.tenant_id,g.page_id));
 GRANT SELECT ON km.ingest_eligible TO km_app;
 -- Populate the same receipts on upgrade with the original, already committed events.
 ALTER TABLE km.editor_outbox NO FORCE ROW LEVEL SECURITY;

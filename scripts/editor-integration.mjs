@@ -379,6 +379,7 @@ try {
     entries: [{ remoteKey: "first", version: "v2", operation: "delete" }],
   });
   await request("GET", "/wiki/pages/" + created, undefined, adminA, 404);
+  await request("POST", "/wiki/pages/" + created + "/restore", {}, adminA, 404);
   await request("GET", syncRoute + "/objects", undefined, adminB, 404);
   const assetPath = "/wiki/pages/" + root + "/attachments";
   const captured = await request("POST", assetPath, {

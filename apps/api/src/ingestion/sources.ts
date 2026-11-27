@@ -66,7 +66,7 @@ export async function sources(
     const safe = [];
     for (const row of found.slice(0, 100)) {
       if (row.page_id && !(await store.can("content.read", row.page_id)))
-        continue;
+        throw missing();
       safe.push(row);
     }
     return {
@@ -125,6 +125,10 @@ export async function sources(
           : "quarantine";
     let page = prior?.page_id ?? null;
     if (state !== "draft" && page) {
+      await sql`insert into km.ingest_origin_denials(tenant_id,page_id) values(${store.tenant},${page}) on conflict do nothing`.execute(
+        store.tx,
+      );
+
       const live = (
         await sql`select 1 from km.wiki_pages where id=${page} and deleted_batch is null`.execute(
           store.tx,
