@@ -2,7 +2,31 @@ import { sql, type TenantTransaction } from "@km/foundation";
 import { configuredEmbedding } from "./embedding.js";
 import { embed } from "./segments.js";
 
-const semantic = configuredEmbedding();
+const available = new Map<string, ReturnType<typeof configuredEmbedding>>();
+const fallback = configuredEmbedding();
+if (fallback.model) available.set(fallback.model, fallback);
+const catalog: unknown = JSON.parse(
+  process.env.KM_INGEST_EMBED_CATALOG || "{}",
+);
+if (typeof catalog !== "object" || catalog === null || Array.isArray(catalog))
+  throw new Error("Invalid semantic model catalog");
+for (const [alias, entry] of Object.entries(catalog)) {
+  if (
+    !entry ||
+    typeof entry.model !== "string" ||
+    !Number.isInteger(entry.dimension) ||
+    alias.length > 150 ||
+    available.has(alias)
+  )
+    throw new Error("Invalid semantic model catalog entry");
+  const configured = configuredEmbedding({
+    ...process.env,
+    KM_INGEST_EMBED_MODEL: entry.model,
+    KM_INGEST_EMBED_DIMENSION: String(entry.dimension),
+  });
+  if (!configured.model) throw new Error("Semantic model endpoint unavailable");
+  available.set(alias, configured);
+}
 type Profile = {
   version: number;
   model: string;
@@ -24,10 +48,8 @@ export async function currentEmbedding(tx: TenantTransaction) {
 }
 
 function selectEmbedding(profile: Profile) {
-  if (
-    semantic.model !== profile.model ||
-    semantic.dimension !== profile.dimension
-  )
+  const semantic = available.get(profile.model);
+  if (!semantic || semantic.dimension !== profile.dimension)
     throw new Error("Configured semantic model does not match profile");
   return { profile: "tenant-v" + profile.version, vector: semantic.vector };
 }

@@ -413,6 +413,17 @@ try {
     ).toString("base64"),
   });
   assert.equal(scannedPdf.scanState, "clean");
+  const mixedPdf = await request("POST", assetPath, {
+    filename: "mixed.pdf",
+    contentType: "application/pdf",
+    data: readFileSync(
+      new URL(
+        "../contracts/fixtures/ingestion/mixed-pt-en.pdf",
+        import.meta.url,
+      ),
+    ).toString("base64"),
+  });
+  assert.equal(mixedPdf.scanState, "clean");
   const legacyFiles = [];
   for (const [extension, contentType, phrase] of [
     ["doc", "application/msword", "Documento legado seguro"],
@@ -505,6 +516,11 @@ try {
     chunks.find((row) => row.block_id === scannedPdf.id)?.content ?? "",
     /ACESSO SEGURO/,
   );
+  const hybrid = chunks
+    .filter((row) => row.block_id === mixedPdf.id)
+    .map((row) => row.content)
+    .join(" ");
+  assert.match(hybrid, /Camada textual preservada[\s\S]*ACESSO SEGURO/);
   for (const file of legacyFiles) {
     assert.ok(
       chunks.some(
@@ -959,7 +975,7 @@ try {
       "tenant-denial",
       "attachment-integrity",
       "ocr",
-      "scanned-pdf",
+      "scanned-and-mixed-pdf",
       "legacy-office",
       "semantic-profile-backfill",
       "deduplication",

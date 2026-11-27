@@ -1,9 +1,10 @@
 import { chmod, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 
-const [socket, port, model, fixture] = process.argv.slice(2);
-if (!socket?.startsWith("/") || !/^\d{1,5}$/.test(port) || !model)
+const [socket, port, configuredModels, fixture] = process.argv.slice(2);
+if (!socket?.startsWith("/") || !/^\d{1,5}$/.test(port) || !configuredModels)
   throw new Error("Informe socket absoluto, porta loopback e modelo");
+const models = new Set(configuredModels.split(","));
 const server = createServer(async (req, res) => {
   if (req.method !== "POST" || req.url !== "/api/embed") {
     res.writeHead(404).end();
@@ -20,7 +21,7 @@ const server = createServer(async (req, res) => {
       }
     }
     const input = JSON.parse(body);
-    if (input.model !== model || typeof input.input !== "string") {
+    if (!models.has(input.model) || typeof input.input !== "string") {
       res.writeHead(400).end();
       return;
     }
@@ -29,7 +30,11 @@ const server = createServer(async (req, res) => {
       redirect: "error",
       signal: AbortSignal.timeout(12000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input: input.input, truncate: false }),
+      body: JSON.stringify({
+        model: input.model,
+        input: input.input,
+        truncate: false,
+      }),
     });
     if (!result.ok) throw new Error("Model unavailable");
     const output = await result.text();

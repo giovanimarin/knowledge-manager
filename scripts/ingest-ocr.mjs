@@ -65,16 +65,22 @@ const server = createServer(async (req, res) => {
         .end(converted);
       return;
     }
-    const text =
+    const result =
       req.url === "/pdf"
-        ? await scannedPdf(bytes, signal)
-        : await recognize(bytes, signal);
+        ? {
+            pages: await scannedPdf(
+              bytes,
+              req.headers["x-km-ocr-pages"],
+              signal,
+            ),
+          }
+        : { text: await recognize(bytes, signal) };
     res
       .writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
       })
-      .end(JSON.stringify({ text }));
+      .end(JSON.stringify(result));
   } catch {
     if (!res.headersSent) res.writeHead(503).end();
   } finally {
@@ -91,16 +97,27 @@ async function inScratch(action) {
   }
 }
 
-async function scannedPdf(bytes, signal) {
+async function scannedPdf(bytes, selection, signal) {
   return inScratch(async (folder) => {
     const file = join(folder, "source.pdf");
     await writeFile(file, bytes);
     const info = await run("pdfinfo", [file], null, signal, 32000);
     const count = Number(/^Pages:\s+(\d+)$/m.exec(info.toString())?.[1]);
-    if (!Number.isInteger(count) || count < 1 || count > 12)
-      throw new Error("Scanned PDF page limit");
+    if (!Number.isInteger(count) || count < 1 || count > 100)
+      throw new Error("PDF page limit");
+    const requested =
+      typeof selection === "string" && /^[0-9]+(?:,[0-9]+)*$/.test(selection)
+        ? selection.split(",").map(Number)
+        : [];
+    if (
+      !requested.length ||
+      requested.length > 12 ||
+      new Set(requested).size !== requested.length ||
+      requested.some((page) => page < 1 || page > count)
+    )
+      throw new Error("Invalid scanned PDF selection");
     const pages = [];
-    for (let page = 1; page <= count; page++) {
+    for (const page of requested) {
       const image = await run(
         "pdftoppm",
         [
@@ -120,7 +137,7 @@ async function scannedPdf(bytes, signal) {
       );
       pages.push(await recognize(image, signal));
     }
-    return pages.join("\n").trim();
+    return pages;
   });
 }
 
@@ -178,17 +195,29 @@ async function recognize(bytes, signal) {
 
 function run(binary, args, input, signal, maxOutput, folder) {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      stdio: ["pipe", "pipe", "ignore"],
-      detached: true,
-      cwd: folder,
-      env: {
-        PATH: "/usr/local/bin:/usr/bin:/bin",
-        OMP_THREAD_LIMIT: "1",
-        LANG: "C.UTF-8",
-        HOME: folder ?? tmpdir(),
+    const child = spawn(
+      "prlimit",
+      [
+        "--as=1610612736",
+        "--fsize=16777216",
+        "--cpu=18",
+        "--nofile=128",
+        "--",
+        binary,
+        ...args,
+      ],
+      {
+        stdio: ["pipe", "pipe", "ignore"],
+        detached: true,
+        cwd: folder,
+        env: {
+          PATH: "/usr/local/bin:/usr/bin:/bin",
+          OMP_THREAD_LIMIT: "1",
+          LANG: "C.UTF-8",
+          HOME: folder ?? tmpdir(),
+        },
       },
-    });
+    );
     function kill() {
       try {
         process.kill(-child.pid, "SIGKILL");

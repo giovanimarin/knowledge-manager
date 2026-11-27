@@ -65,7 +65,7 @@ for pair in doc:odt xls:ods ppt:odp; do
   [[ "$code" == 503 ]]
 done
 code="$(printf '%%PDF-invalid' | curl --unix-socket "$KM_OCR_DIR/ocr.sock" \
-  -sS -o /dev/null -w '%{http_code}' --data-binary @- http://localhost/pdf)"
+  -sS -o /dev/null -w '%{http_code}' -H 'X-KM-OCR-Pages: 1' --data-binary @- http://localhost/pdf)"
 [[ "$code" == 503 ]]
 
 export KM_INGEST_EMBED_SOCKET=/km-ocr/embedding.sock

@@ -8,7 +8,7 @@ try {
     { disableFontFace: true, useSystemFonts: false },
   );
   if (document.numPages > 100) throw new Error("PDF pages exceed bounds");
-  const result = await extractText(document, { mergePages: true });
+  const result = await extractText(document, { mergePages: false });
   parentPort.postMessage({ text: result.text });
 } catch {
   parentPort.postMessage({ error: true });

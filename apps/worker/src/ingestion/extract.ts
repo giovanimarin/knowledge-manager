@@ -89,7 +89,7 @@ function spreadsheet(data: Uint8Array, dictionary: string[]) {
   return rows;
 }
 
-function pdf(bytes: Buffer): Promise<string> {
+function pdf(bytes: Buffer): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./pdf.js", import.meta.url), {
       workerData: new Uint8Array(bytes),
@@ -97,14 +97,14 @@ function pdf(bytes: Buffer): Promise<string> {
       stdout: true,
       stderr: true,
     });
-    const finish = (text?: string) => {
+    const finish = (text?: string[]) => {
       clearTimeout(timer);
       void worker.terminate();
       if (text === undefined) reject(new Error("PDF extraction failed"));
       else resolve(text);
     };
     const timer = setTimeout(() => finish(), 1500);
-    worker.once("message", (response: { text?: string }) =>
+    worker.once("message", (response: { text?: string[] }) =>
       finish(response.text),
     );
     worker.once("error", () => finish());
@@ -113,7 +113,11 @@ function pdf(bytes: Buffer): Promise<string> {
 }
 
 const imageTypes = new Set(["png", "jpeg", "jpg", "webp", "gif"]);
-function nativeExtract(bytes: Buffer, format: string): Promise<Buffer> {
+function nativeExtract(
+  bytes: Buffer,
+  format: string,
+  pages?: number[],
+): Promise<Buffer> {
   const socketPath = process.env.KM_INGEST_OCR_SOCKET;
   if (!socketPath) throw new Error("OCR endpoint unavailable");
   return new Promise((resolve, reject) => {
@@ -125,6 +129,7 @@ function nativeExtract(bytes: Buffer, format: string): Promise<Buffer> {
         headers: {
           "Content-Type": "application/octet-stream",
           "Content-Length": bytes.length,
+          ...(pages ? { "X-KM-OCR-Pages": pages.join(",") } : {}),
         },
         signal: AbortSignal.timeout(24000),
       },
@@ -156,12 +161,34 @@ const legacyOffice = new Map([
   ["xls", "xlsx"],
   ["ppt", "pptx"],
 ]);
-async function ocrText(bytes: Buffer, format: "ocr" | "pdf") {
+async function ocrText(bytes: Buffer) {
   const value = JSON.parse(
-    (await nativeExtract(bytes, format)).toString("utf8"),
+    (await nativeExtract(bytes, "ocr")).toString("utf8"),
   ) as { text?: unknown };
-  if (typeof value.text !== "string") throw new Error("Invalid OCR response");
+  if (typeof value?.text !== "string") throw new Error("Invalid OCR response");
   return value.text;
+}
+
+async function pdfWithOcr(bytes: Buffer) {
+  const pages = await pdf(bytes);
+  const missing = pages.flatMap((text, index) =>
+    text.trim() ? [] : [index + 1],
+  );
+  if (missing.length) {
+    if (missing.length > 12) throw new Error("Scanned PDF page limit");
+    const result = JSON.parse(
+      (await nativeExtract(bytes, "pdf", missing)).toString("utf8"),
+    ) as { pages?: unknown };
+    if (
+      !Array.isArray(result?.pages) ||
+      result.pages.length !== missing.length ||
+      !result.pages.every((text) => typeof text === "string")
+    )
+      throw new Error("Invalid PDF OCR response");
+    for (const [index, page] of missing.entries())
+      pages[page - 1] = result.pages[index] as string;
+  }
+  return pages.join("\n");
 }
 export async function extract(
   file: Attachment,
@@ -186,10 +213,8 @@ export async function extract(
   )
     throw new Error("Attachment integrity mismatch");
   let text: string;
-  if (ext === "pdf") {
-    text = await pdf(bytes);
-    if (!text.trim()) text = await ocrText(bytes, "pdf");
-  } else if (imageTypes.has(ext)) text = await ocrText(bytes, "ocr");
+  if (ext === "pdf") text = await pdfWithOcr(bytes);
+  else if (imageTypes.has(ext)) text = await ocrText(bytes);
   else if (["docx", "xlsx", "pptx"].includes(ext) || legacyOffice.has(ext)) {
     const modern = legacyOffice.get(ext);
     const entries = officeFiles(
