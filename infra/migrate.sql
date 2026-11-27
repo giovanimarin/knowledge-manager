@@ -6,7 +6,7 @@ CREATE SCHEMA IF NOT EXISTS km AUTHORIZATION km_migrate;
 SET LOCAL ROLE km_migrate;
 CREATE TABLE IF NOT EXISTS km.migrations (version integer PRIMARY KEY, checksum text NOT NULL);
 SELECT EXISTS (SELECT 1 FROM km.migrations WHERE version = 1) AS applied, EXISTS (
-  SELECT 1 FROM km.migrations WHERE version NOT IN (1,2,3,4,5,6,7,8) OR (version = 1 AND checksum <> :'checksum') OR (version = 2 AND checksum <> :'identity_checksum') OR (version = 3 AND checksum <> :'worker_checksum') OR (version = 4 AND checksum <> :'wiki_checksum') OR (version = 5 AND checksum <> :'wiki_objects_checksum') OR (version = 6 AND checksum <> :'wiki_uploads_checksum') OR (version = 7 AND checksum <> :'editor_checksum') OR (version = 8 AND checksum <> :'ingest_checksum')
+  SELECT 1 FROM km.migrations WHERE version NOT IN (1,2,3,4,5,6,7,8,9) OR (version = 1 AND checksum <> :'checksum') OR (version = 2 AND checksum <> :'identity_checksum') OR (version = 3 AND checksum <> :'worker_checksum') OR (version = 4 AND checksum <> :'wiki_checksum') OR (version = 5 AND checksum <> :'wiki_objects_checksum') OR (version = 6 AND checksum <> :'wiki_uploads_checksum') OR (version = 7 AND checksum <> :'editor_checksum') OR (version = 8 AND checksum <> :'ingest_checksum') OR (version = 9 AND checksum <> :'ingest_profiles_checksum')
 ) AS incompatible \gset
 \if :incompatible
   DO $$ BEGIN RAISE EXCEPTION 'Unsupported migration version or checksum'; END $$;
@@ -57,5 +57,11 @@ SELECT EXISTS (SELECT FROM km.migrations WHERE version = 8) AS ingest_applied \g
 \else
   \ir v8-up.sql
   INSERT INTO km.migrations VALUES (8, :'ingest_checksum');
+\endif
+SELECT EXISTS (SELECT FROM km.migrations WHERE version = 9) AS ingest_profiles_applied \gset
+\if :ingest_profiles_applied
+\else
+  \ir v9-up.sql
+  INSERT INTO km.migrations VALUES (9, :'ingest_profiles_checksum');
 \endif
 COMMIT;

@@ -2,7 +2,7 @@ import { sources } from "./sources.js";
 import { randomUUID } from "node:crypto";
 import { sql } from "@km/foundation";
 import { EditorStore } from "../editor/store.js";
-import { IdentityError, id } from "../identity/security.js";
+import { IdentityError, id, string } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
 
 export async function ingest(
@@ -12,6 +12,49 @@ export async function ingest(
   body: Record<string, unknown>,
   query: URLSearchParams,
 ) {
+  if (path === "/v1/ingestion/profiles") {
+    if (store.actor.kind !== "member" || !store.actor.member.admin)
+      throw new IdentityError(404);
+    if (method === "GET")
+      return (
+        await sql`select version,model,dimension,state,attempts,created_at,activated_at
+        from km.ingest_profiles order by version desc limit 100`.execute(
+          store.tx,
+        )
+      ).rows;
+    if (method === "POST") {
+      if (!store.actor.member.stepped_up) throw new IdentityError(403);
+      const model = string(body.model, 150);
+      const dimension = body.dimension;
+      if (
+        typeof dimension !== "number" ||
+        !Number.isInteger(dimension) ||
+        dimension < 1 ||
+        dimension > 4096
+      )
+        throw new IdentityError(400);
+      await store.lock();
+      const building =
+        await sql`select 1 from km.ingest_profiles where state='building'`.execute(
+          store.tx,
+        );
+      if (building.rows.length) throw new IdentityError(409);
+      const created =
+        await sql`insert into km.ingest_profiles(tenant_id,version,model,dimension)
+        select ${store.tenant},coalesce(max(version),0)+1,${model},${dimension} from km.ingest_profiles
+        returning version,model,dimension,state`.execute(store.tx);
+      await audit(
+        store.tx,
+        store.tenant,
+        store.member,
+        "ingestion.profile.create",
+        "success",
+        null,
+      );
+      return created.rows[0];
+    }
+    throw new IdentityError(404);
+  }
   if (path.startsWith("/v1/ingestion/sources"))
     return sources(store, method, path, body, query);
   const match =

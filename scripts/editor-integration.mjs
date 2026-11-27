@@ -51,7 +51,10 @@ async function request(method, path, body, token = adminA, status = 200) {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(10000),
   });
-  assert.equal(response.status, status, path);
+  assert.ok(
+    [status].flat().includes(response.status),
+    `${path}: ${response.status}, esperado ${status}`,
+  );
   return response.json();
 }
 async function connect(token) {
@@ -545,6 +548,54 @@ try {
       (row) => row.block_id === captured.id,
     ),
   );
+  const profileRoute = "/ingestion/profiles";
+  const model = process.env.KM_INGEST_EMBED_MODEL;
+  const dimension = Number(process.env.KM_INGEST_EMBED_DIMENSION);
+  await request("GET", profileRoute, undefined, reader.accessToken, 404);
+  assert.deepEqual(await request("GET", profileRoute, undefined, adminB), []);
+  db(`update km.session_families set step_until=now()+interval '10 minutes'
+    where tenant_id='${tenant}' and member_id='${adminMemberA}'`);
+  const firstProfile = await Promise.all([
+    request("POST", profileRoute, { model, dimension }, adminA, [200, 409]),
+    request("POST", profileRoute, { model, dimension }, adminA, [200, 409]),
+  ]);
+  assert.equal(
+    firstProfile.filter((profile) => profile.state === "building").length,
+    1,
+  );
+  assert.equal(
+    db(
+      `select count(*) from km.ingest_profiles where tenant_id='${tenant}' and state='building'`,
+    ),
+    "1",
+  );
+  await untilIngest(
+    async () => (await request("GET", profileRoute))[0]?.state === "active",
+    "semantic backfill did not activate",
+  );
+  const semanticRows = await request("GET", ingestPath + "/chunks");
+  assert.equal(semanticRows.length, initialIds.length - 1);
+  assert.ok(semanticRows.every((row) => row.profile === "tenant-v1"));
+  assert.equal(
+    db(
+      `select min(public.vector_dims(embedding)) from km.ingest_vectors where tenant_id='${tenant}' and profile='tenant-v1'`,
+    ),
+    String(dimension),
+  );
+  const failedStart = await request("POST", profileRoute, {
+    model,
+    dimension: dimension - 1,
+  });
+  assert.equal(failedStart.version, 2);
+  await untilIngest(async () => {
+    const profiles = await request("GET", profileRoute);
+    return profiles[0]?.attempts > 0 && profiles[1]?.state === "active";
+  }, "incompatible profile did not record retry");
+  assert.ok(
+    (await request("GET", ingestPath + "/chunks")).every(
+      (row) => row.profile === "tenant-v1",
+    ),
+  );
   const live = await request("GET", route + "/publication");
   assert.equal(live.revision, review.revision);
   assert.equal(live.content, view.content);
@@ -583,6 +634,7 @@ try {
       "ocr",
       "scanned-pdf",
       "legacy-office",
+      "semantic-profile-backfill",
       "deduplication",
       "withdrawal",
       "source-cursor",

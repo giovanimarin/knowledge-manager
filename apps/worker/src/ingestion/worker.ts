@@ -1,10 +1,8 @@
 import { extract, type Attachment } from "./extract.js";
 import { sql, type Dependencies, type TenantTransaction } from "@km/foundation";
-import { configuredEmbedding } from "./embedding.js";
+import { advanceProfile, currentEmbedding } from "./profiles.js";
 import { segments, type Block } from "./segments.js";
 
-const embedding = configuredEmbedding();
-const profile = embedding.profile;
 type Job = {
   id: string;
   page_id: string;
@@ -33,6 +31,7 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
     where p.tenant_id=${tenant} and p.page_id=${job.page_id}
       and p.withdrawn_at is null and (p.expires_at is null or p.expires_at>clock_timestamp())
       and w.deleted_batch is null and o.state='active'
+      and not exists(select from km.ingest_origin_denials d where (d.tenant_id,d.page_id)=(p.tenant_id,p.page_id))
   `.execute(tx)
   ).rows[0];
   if (!current) {
@@ -46,6 +45,8 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
     (job.kind === "withdrawn" || job.publication_id !== current.id)
   )
     return;
+  const embedding = await currentEmbedding(tx);
+  const profile = embedding.profile;
   const present = (
     await sql<{
       publication_id: string;
@@ -133,8 +134,11 @@ async function runTenant(dependencies: Dependencies, tenant: string) {
           =(c.tenant_id,c.page_id,g.publication_id,c.attachment_id))`.execute(
         tx,
       );
+      await advanceProfile(tx, tenant);
       await sql`delete from km.ingest_vectors v where not exists
-        (select 1 from km.ingest_chunks c where (c.tenant_id,c.profile,c.digest)=(v.tenant_id,v.profile,v.digest))`.execute(
+        (select from km.ingest_chunks c where (c.tenant_id,c.digest)=(v.tenant_id,v.digest)
+          and (c.profile=v.profile or exists(select from km.ingest_profiles p where p.state='building'
+            and p.tenant_id=v.tenant_id and v.profile='tenant-v'||p.version)))`.execute(
         tx,
       );
     });

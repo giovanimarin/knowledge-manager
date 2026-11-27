@@ -29,6 +29,8 @@ cleanup() {
       compose down -v --remove-orphans >/dev/null 2>&1
     fi
   done
+  if [[ -n "${embed_pid:-}" ]]; then kill "$embed_pid" 2>/dev/null || true; fi
+  if [[ -n "${embed_container:-}" ]]; then docker rm -f -v "$embed_container" >/dev/null 2>&1 || true; fi
   if [[ -n "${ocr_pid:-}" ]]; then kill "$ocr_pid" 2>/dev/null || true; fi
   bash scripts/wiki-clamd.sh stop "$KM_SCAN_DIR"
   if [[ -f "$KM_SCAN_DIR/clamd.log" ]]; then cp "$KM_SCAN_DIR/clamd.log" "$artifacts/clamd.log"; fi
@@ -65,6 +67,28 @@ done
 code="$(printf '%%PDF-invalid' | curl --unix-socket "$KM_OCR_DIR/ocr.sock" \
   -sS -o /dev/null -w '%{http_code}' --data-binary @- http://localhost/pdf)"
 [[ "$code" == 503 ]]
+
+export KM_INGEST_EMBED_SOCKET=/km-ocr/embedding.sock
+export KM_INGEST_EMBED_MODEL=bge-m3
+export KM_INGEST_EMBED_DIMENSION=1024
+embed_container="$prefix-embedding"
+docker run -d --name "$embed_container" -p 127.0.0.1::11434 -e OLLAMA_NUM_PARALLEL=1 \
+  ollama/ollama:0.11.10@sha256:a5409cb903d30f9cd67e9f430dd336ddc9274e16fd78f75b675c42065991b4fd
+embed_port="$(docker port "$embed_container" 11434/tcp | cut -d: -f2)"
+for _ in {1..40}; do
+  curl --noproxy '*' -fsS "http://127.0.0.1:$embed_port/api/tags" >/dev/null && break
+  sleep .5
+done
+docker exec "$embed_container" ollama pull "$KM_INGEST_EMBED_MODEL" > "$artifacts/embedding-model.log" 2>&1
+docker exec "$embed_container" ollama list >> "$artifacts/embedding-model.log"
+node scripts/ingest-embedding.mjs "$KM_OCR_DIR/embedding.sock" "$embed_port" "$KM_INGEST_EMBED_MODEL" --fixture &
+embed_pid=$!
+for _ in {1..40}; do
+  [[ -S "$KM_OCR_DIR/embedding.sock" && "$(stat -c %a "$KM_OCR_DIR/embedding.sock")" == 666 ]] && break
+  sleep .1
+done
+[[ -S "$KM_OCR_DIR/embedding.sock" ]]
+[[ "$(stat -c %a "$KM_OCR_DIR/embedding.sock")" == 666 ]]
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
