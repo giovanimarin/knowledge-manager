@@ -203,7 +203,7 @@ export async function importArchive(
     } catch {
       throw invalid();
     }
-    if (!Array.isArray(parsed) || !parsed.length || parsed.length > 20)
+    if (!Array.isArray(parsed) || !parsed.length || parsed.length > 100)
       throw invalid();
     return parsed.map((raw: unknown, i) => {
       const entry = input(raw);

@@ -697,7 +697,11 @@ export class Wiki {
         const items = archiveFormat
           ? await importArchive(format, body.data)
           : body.items;
-        if (!Array.isArray(items) || !items.length || items.length > 20)
+        if (
+          !Array.isArray(items) ||
+          !items.length ||
+          items.length > (archiveFormat ? 100 : 20)
+        )
           throw invalid();
         const sourceKeys = new Map<string, string>();
         const queuedLinks: { source: string; target: string; type: string }[] =
@@ -761,12 +765,27 @@ export class Wiki {
           });
         }
       } else {
-        const ids = body.pageIds;
-        if (!Array.isArray(ids) || !ids.length || ids.length > 20)
-          throw invalid();
-        for (const key of new Set(ids.map(id))) {
-          await this.page(key);
-          keys.push(key);
+        if (format === "zip" && body.spaceId !== undefined) {
+          const space = id(body.spaceId);
+          await this.space(space, "content.read");
+          const candidates = (
+            await sql<{
+              id: string;
+            }>`select id from km.wiki_pages where space_id=${space} and deleted_batch is null order by id`.execute(
+              this.tx,
+            )
+          ).rows;
+          for (const page of candidates)
+            if (await this.can("content.read", page.id)) keys.push(page.id);
+          if (!keys.length || keys.length > 100) throw invalid();
+        } else {
+          const ids = body.pageIds;
+          if (!Array.isArray(ids) || !ids.length || ids.length > 20)
+            throw invalid();
+          for (const key of new Set(ids.map(id))) {
+            await this.page(key);
+            keys.push(key);
+          }
         }
       }
       const job = randomUUID();

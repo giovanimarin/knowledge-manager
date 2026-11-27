@@ -66,31 +66,39 @@ export function WikiTransfer({
     try {
       let body: Record<string, unknown>;
       if (kind === "export") {
-        if (!pageId) throw new Error("Abra o documento que deseja exportar.");
-        body = { format, pageIds: [pageId] };
+        if (format === "zip" && spaceId) body = { format, spaceId };
+        else {
+          if (!pageId) throw new Error("Abra o documento que deseja exportar.");
+          body = { format, pageIds: [pageId] };
+        }
       } else {
-        const file = form.get("file");
+        const files = form.getAll("file");
+        const valid = files.filter(
+          (file): file is File => file instanceof File && file.size > 0,
+        );
         if (
-          !(file instanceof File) ||
-          file.size < 1 ||
-          file.size > 8 * 1024 * 1024
+          !valid.length ||
+          valid.length > 20 ||
+          valid.reduce((total, file) => total + file.size, 0) > 8 * 1024 * 1024
         )
-          throw new Error("Selecione um arquivo de até 8 MiB.");
-        const title = file.name.replace(/\.[^.]+$/, "").slice(0, 160);
-        if (format === "zip" || format === "confluence" || format === "notion")
-          body = { format, spaceId, data: await encode(file) };
-        else if (format === "markdown" || format === "html")
-          body = {
-            format,
-            spaceId,
-            items: [{ title, content: await file.text() }],
-          };
-        else
-          body = {
-            format,
-            spaceId,
-            items: [{ title, data: await encode(file) }],
-          };
+          throw new Error(
+            "Selecione até 20 arquivos com tamanho total de até 8 MiB.",
+          );
+        if (["zip", "confluence", "notion"].includes(format)) {
+          if (valid.length !== 1)
+            throw new Error("Selecione um único arquivo ZIP.");
+          body = { format, spaceId, data: await encode(valid[0]!) };
+        } else {
+          const items = await Promise.all(
+            valid.map(async (file) => {
+              const title = file.name.replace(/\.[^.]+$/, "").slice(0, 160);
+              return ["markdown", "html"].includes(format)
+                ? { title, content: await file.text() }
+                : { title, data: await encode(file) };
+            }),
+          );
+          body = { format, spaceId, items };
+        }
       }
       const job = await call<Job>("/" + kind + "-jobs", "POST", body);
       const result = await call<{
@@ -142,18 +150,20 @@ export function WikiTransfer({
             </select>
           </label>
           <label>
-            Arquivo de importação <input name="file" type="file" required />
+            Arquivo de importação{" "}
+            <input name="file" type="file" multiple required />
           </label>
           <button disabled={busy}>Importar arquivo</button>
         </form>
       )}
-      {pageId && (
+      {(pageId || spaceId) && (
         <form onSubmit={(event) => void submit(event, "export")}>
           <label>
             Formato de exportação{" "}
             <select name="format">
               {Object.entries(labels)
                 .slice(0, 5)
+                .filter(([value]) => pageId || value === "zip")
                 .map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
