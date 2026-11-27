@@ -129,7 +129,8 @@ export class Wiki {
     const siblings = (
       await sql<{
         id: string;
-      }>`select id from km.wiki_pages where space_id=${space} and
+        position: number;
+      }>`select id,position from km.wiki_pages where space_id=${space} and
       parent_id is not distinct from ${parent}::uuid and deleted_batch is null and id is distinct from ${moving}::uuid
       order by position,id`.execute(this.tx)
     ).rows;
