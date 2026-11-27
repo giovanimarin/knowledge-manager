@@ -133,7 +133,10 @@ export class Wiki {
       parent_id is not distinct from ${parent}::uuid and deleted_batch is null and id is distinct from ${moving}::uuid
       order by position,id`.execute(this.tx)
     ).rows;
-    const index = position === undefined ? siblings.length : position;
+    if (position === undefined) return (siblings.at(-1)?.position ?? -1) + 1;
+    for (const sibling of siblings)
+      await this.require("content.acl.manage", sibling.id);
+    const index = position;
     if (
       typeof index !== "number" ||
       !Number.isInteger(index) ||
@@ -348,6 +351,32 @@ export class Wiki {
       await sql`select pg_advisory_xact_lock(71189004,hashtext(${this.tenant}))`.execute(
         this.tx,
       );
+    }
+    if (path === "/v1/wiki/trash" && method === "GET") {
+      const rows = (
+        await sql<{ id: string; kind: string; deleted_at: Date }>`
+        select id,'page' kind,deleted_at from km.wiki_pages where deleted_batch=id
+        union all select id,'space',deleted_at from km.wiki_spaces where deleted_batch=id
+        order by deleted_at desc`.execute(this.tx)
+      ).rows;
+      const visible = [];
+      for (const row of rows)
+        if (await this.can("content.acl.manage", row.id)) visible.push(row);
+      return visible;
+    }
+    const trashOperation = /^\/v1\/wiki\/trash\/([^/]+)\/(restore|purge)$/.exec(
+      path,
+    );
+    if (trashOperation && method === "POST") {
+      const key = id(trashOperation[1]);
+      const space = body.kind === "space";
+      if (body.kind !== "space" && body.kind !== "page") throw invalid();
+      if (trashOperation[2] === "purge") {
+        if (body.confirm !== key || !localMember(this.actor).stepped_up)
+          throw new IdentityError(403);
+        return this.purge(key, space);
+      }
+      return space ? this.spaceLifecycle(key, true) : this.restore(key);
     }
     const transfer = /^\/v1\/wiki\/(import|export)-jobs(?:\/([^/]+))?$/.exec(
       path,
@@ -593,6 +622,56 @@ export class Wiki {
       };
     }
     throw missing();
+  }
+
+  private async purge(key: string, space: boolean) {
+    await this.require("content.acl.manage", key);
+    if (space) {
+      const found =
+        await sql`select id from km.wiki_spaces where id=${key} and deleted_batch=id`.execute(
+          this.tx,
+        );
+      if (!found.rows.length) throw missing();
+    } else {
+      const root = await this.page(key, "content.acl.manage", true);
+      if (root.deleted_batch !== key) throw missing();
+    }
+    const affected = (
+      await sql<{ id: string }>`
+      with recursive tree(id) as (
+       select id from km.wiki_pages where case when ${space} then space_id=${key} else id=${key} end
+       union select p.id from km.wiki_pages p join tree on p.parent_id=tree.id
+      ) select id from tree`.execute(this.tx)
+    ).rows;
+    for (const row of affected)
+      await this.require("content.acl.manage", row.id);
+    const pages = affected.map((row) => row.id);
+    const tombstones = space ? [key, ...pages] : pages;
+    await sql`insert into km.wiki_tombstones (tenant_id,id)
+      select ${this.tenant},id from unnest(${tombstones}::uuid[]) as t(id) on conflict do nothing`.execute(
+      this.tx,
+    );
+    await sql`delete from km.wiki_relations where source_id=any(${pages}::uuid[]) or target_id=any(${pages}::uuid[])`.execute(
+      this.tx,
+    );
+    await sql`delete from km.wiki_comments where page_id=any(${pages}::uuid[])`.execute(
+      this.tx,
+    );
+    await sql`delete from km.wiki_attachments where page_id=any(${pages}::uuid[])`.execute(
+      this.tx,
+    );
+    await sql`delete from km.wiki_pages where id=any(${pages}::uuid[])`.execute(
+      this.tx,
+    );
+    if (space) {
+      await sql`delete from km.wiki_templates where space_id=${key}`.execute(
+        this.tx,
+      );
+      await sql`delete from km.wiki_spaces where id=${key}`.execute(this.tx);
+    }
+    await changeEpoch(this.tx, this.tenant);
+    await this.event("trash.purge", key);
+    return { id: key };
   }
 
   private async trash(key: string) {

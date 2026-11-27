@@ -63,6 +63,16 @@ CREATE TABLE km.wiki_transfer_jobs (
   format text NOT NULL, target_ids uuid[] NOT NULL,
   PRIMARY KEY (tenant_id,id)
 );
+CREATE TABLE km.wiki_tombstones (
+  tenant_id uuid NOT NULL REFERENCES km.organizations,
+  id uuid NOT NULL, purged_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id,id)
+);
+ALTER TABLE km.wiki_tombstones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE km.wiki_tombstones FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_scope ON km.wiki_tombstones USING
+ (tenant_id = nullif(current_setting('km.tenant_id',true),'')::uuid);
+GRANT SELECT, INSERT ON km.wiki_tombstones TO km_app;
 DO $$
 DECLARE relation text;
 BEGIN
