@@ -157,3 +157,19 @@ Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/
 - Em `cca33a5`, os três checks passaram. O smoke confirmou leitura e escrita negadas entre C dedicado e o conteúdo shared, além de revogação em sessão ativa e isolamento de A/B. W1.4 concluída. O cenário de metadados verificou schema de espaço, edição e busca sob ACL. W2.2 concluída.
 - Quatro cenários Playwright passaram em **3,6 s** com as regressões da fundação e identidade. O `pnpm verify` local executou **10 testes** sem falhas nem omissões. O benchmark filtrado mediu p50 **7,99 ms** e p95 **10,82 ms**, e o não filtrado p50 **16,41 ms** e p95 **18,94 ms**, com 15 requisições por cenário.
 - Validação ponderada **60%** (W1 4/4, W2 3/4, W3 1/4, W4 1/4). Purga manual e tombstone foram testados; cobertura da retenção automática e reconciliação de backups ainda pendentes. O pacote continua em revisão, com **2/18** pacotes aceitos. [Três checks do código](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503) · [Artefatos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503/artifacts/15196053824)
+
+### Revisão técnica do PR #10
+
+**Gates locais verificados 16/16 · 100% ponderado.** O aceite do mantenedor e os gates de sandbox permanecem distintos. Pacotes formalmente aceitos **2/18** até a revisão e integração do PKG-03.
+
+| Subtarefa | Evidência de conclusão |
+| --- | --- |
+| W2.1 | `b090083`, `ab12516`, `01dc1e9`. IDs de bloco sobrevivem à reordenação, a remoção deixa a âncora identificável, e o teste cobre histórico, resolução, menções e revogação. O browser exercita a seleção da âncora e o histórico. |
+| W3.1 | `b090083`, `6c00cfc`, `5b2474a`. ClamAV **1.5.4** no runner descartável. Falha do daemon mantém quarentena, reanálise libera o arquivo limpo, a assinatura local bloqueia a amostra sintética, e ACL, checksum, quota e replay são exercitados. A v5 move novos bytes para o volume privado e a v6 vincula o upload ao principal. |
+| W3.2 | `0064c28`, `fb51d45`, `6be9535`, `5b2474a`. Round trips Word/PDF/ZIP, HTML sanitizado, Markdown, referências e anexos de pacote Notion, pacote Confluence e manifestos de perdas. A fixture local não comprova interoperabilidade com os serviços externos. |
+| W3.4 | `a0aaf52`, `6be9535`. Restauração da subárvore e bytes, expiração da janela, auditoria da purga, tombstones e remoção física. Backup e restore passaram, com reconciliação de exclusões definitivas entre snapshots no PKG-14. |
+| W4.1/W4.2/W4.4 | `5b2474a`. Cinco cenários Playwright, incluindo U3 e U4 com negativa autenticada em outro espaço. Operações C2/C3 verificadas no contrato, integração e unitários. O relatório G3 registra filtros, busca, scan, ACL, formatos e retenção. |
+
+Em `5b2474a`, os três checks passaram com as regressões 01/02 e isolamento shared/dedicated. O Playwright passou **5/5 em 4,1 s**. Backup em **10 s**, restauração em **15 s**. Com 15 requisições por cenário, busca filtrada p50 **18,06 ms** / p95 **22,80 ms** e sem filtro p50 **48,56 ms** / p95 **55,95 ms**. São medições em fixtures descartáveis. `pnpm verify` local executou 15 testes em **4,99 s**, sem omissões. [Run](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298) · [Relatórios, G3 e ClamAV](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298/artifacts/15198533115)
+
+Rodadas intermediárias expuseram problemas de licença transitiva, advisories e fixtures U4. O npm foi atualizado, a expressão permissiva MIT + Zlib foi revisada para pako, e o contrato do seletor acessível e a resolução de caminhos de arquivos raiz foram corrigidos. O PDF usa um worker local limitado, sem dependência de binário externo na imagem. [Runbook](packages/PKG-03-runbook.md) · [Contrato e matriz por subcapacidade](packages/PKG-03-contracts.md)
