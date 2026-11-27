@@ -1,16 +1,16 @@
 # Acompanhamento do projeto
 
-Baseline: PR #4 integrado em 63a0a98d. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 0/18 pacotes aceitos. PKG-01 em execução verificável, com aceite pendente.
+Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 1/18 pacotes aceitos. PKG-01 concluído; PKG-02 próximo.
 
 ## Método
 Atualizar em cada PR: pacote, marco, tarefa/subtarefa, estado (pendente, em execução, bloqueado, em validação, concluído), evidência por commit/teste, pendências e próximo passo. Não inferir progresso de código escrito. Concluído exige evidência e aceite aplicável. Percentual do pacote ponderado por marcos e fração de subtarefas verificadas; pesos iniciais PKG-01 22/28/28/22, revisáveis explicitamente. Percentual global de pacotes aceitos separado de esforço ponderado e de prontidão comercial. Gates sandbox/produção pendentes não contam como comprovados. Registrar tempo real quando disponível, sem inventar horas. Manter roadmap e escopo normativo intactos.
 
 ## Pacotes
-PKG-00 e 00B aceitos documentalmente. PKG-01 em validação; 02,03,04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
+PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 autorizado para início; PKG-03,04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
 
 ## PKG-01 — acompanhamento de implementação
 
-Contratos publicados antes do código. O percentual global continua 0/18 aceitos até revisão e gates obrigatórios. A decomposição e os pesos originais foram mantidos.
+Contratos publicados antes do código. O percentual global de pacotes aceitos é 1/18 após revisão e prova dos gates obrigatórios. A decomposição e os pesos originais foram mantidos.
 
 ### M01 — Estrutura (22%)
 - [x] M01.01 Contratos instalação/smoke/readiness/restore — **concluído**. Contrato C10 publicado inicialmente em `b6a7fd2`, reaplicado em `0f4a4de` sobre main. OpenAPI e exemplos aprovados pelo teste local.
@@ -58,11 +58,11 @@ Contratos publicados antes do código. O percentual global continua 0/18 aceitos
 - [x] M04.07 OTel — **concluído**. Teste recebeu span OTLP HTTP real em servidor local, sem atributos sensíveis.
 - [x] M04.08 Benchmark/recuperação — **concluído**. 100 requests concorrência 5: p50 7.13 ms, p95 15.56 ms, p99 49.85 ms. Mesmos registros recuperados no ensaio sintético.
 - [x] M04.09 Checkout limpo sem serviços pagos — **concluído**. Worktree sem alterações antes do teste. Serviços locais e fixtures, sem credenciais externas ou APIs pagas.
-- [ ] M04.10 Documentação/aceite — **em validação**. Runbook publicado e proteção obrigatória de `main` comprovada. Aceite formal aguarda revisão do PR #5 após os checks do novo head.
+- [x] M04.10 Documentação/aceite — **concluído**. Runbook publicado, proteção de `main` comprovada por PR #6, três checks aprovados no head `58bc95c` [execução final](https://github.com/giovanimarin/knowledge-manager/actions/runs/45923608409), revisão final registrada e PR #5 integrado à `main` no commit `f6fcf69715ebf26a81d4e51961c0c28aecb639e4`.
 
 ## Evidências e impedimentos
 
-Validação ponderada **97,8%** (M01 10/10, M02 10/10, M03 10/10, M04 9/10). Esse percentual mede subtarefas verificadas. O aceite de pacotes permanece 0/18.
+Validação ponderada **100%** (M01 10/10, M02 10/10, M03 10/10, M04 10/10). Esse percentual mede subtarefas verificadas e o aceite formal concluído. Pacotes de implementação aceitos: **1/18 (5,6%)**; não representa percentual de esforço do produto nem prontidão comercial.
 
 - [PR #5](https://github.com/giovanimarin/knowledge-manager/pull/5) · [contrato C10](packages/PKG-01-contracts.md) · [runbook](packages/PKG-01-runbook.md) · [licenças](licensing/foundation.md).
 - Implementação inicial `54960bc`; runtime exercitado no checkout local em `05cf26b`; workflow revisado em `36674ce`. A execução integral de `scripts/integration.sh` no Actions confirmou setup, falhas reais, restore válido e falha fechada. No checkout limpo local, a instalação do lockfile levou 10,3 s e o teste integral de Compose terminou com código 0 em 4 min 34,732 s. Nesse ensaio, o backup com retomada levou 30 s, o restore levou 95 s e 100 requests de readiness com concorrência 5 tiveram p50 14,75 ms, p95 78,48 ms e p99 90,89 ms. Essas medições são do ambiente local de teste. Benchmarks de produto e SLOs permanecem futuros.
@@ -70,3 +70,10 @@ Validação ponderada **97,8%** (M01 10/10, M02 10/10, M03 10/10, M04 9/10). Ess
 - As rodadas locais corrigiram permissões rootless, compatibilidade OTLP, findings nas imagens-base, ligação musl da extensão pgvector e o tratamento de desconexões ociosas do banco. Nenhuma supressão de teste ou aviso crítico foi usada.
 - **Proteção de main comprovada.** O mantenedor ativou Main Protection. No PR de teste #6, head `d623cbc`, os cinco testes de Node passaram antes da etapa deliberadamente reprovada em `Foundation / verify`. `Foundation / clean smoke` e `Foundation / audit and SBOM` passaram. O observador, com permissões somente de leitura, confirmou os três checks obrigatórios do ruleset e o estado `blocked` sem conflito. O PR #6 foi fechado sem merge. [PR de teste](https://github.com/giovanimarin/knowledge-manager/pull/6) · [Checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/45913390185) · [Resposta da API](https://github.com/giovanimarin/knowledge-manager/actions/runs/45913390185/job/140227491293).
 - As 60 decisões e os documentos normativos de produto/arquitetura foram comparados com `main` e permanecem intactos. Nenhum serviço pago foi contratado, e sandboxes e produção seguem os pacotes responsáveis.
+
+## Encerramento formal PKG-01
+
+- PR #5 integrado via squash à main no commit `f6fcf69715ebf26a81d4e51961c0c28aecb639e4`. Head de aceite `58bc95cb513f9dd218feca68dcd21511a114aa62`.
+- Os três jobs finais passaram na [execução 45923608409](https://github.com/giovanimarin/knowledge-manager/actions/runs/45923608409), com artefatos de smoke e auditoria. Revisão final registrada no PR #5.
+- Ruleset `Main Protection` (`28200918`) verificado ativo e exigindo os três checks, branch atualizada, pull request e sem bypass. PR descartável #6 comprovou bloqueio com verify vermelho e `mergeable_state: blocked`, encerrado sem merge.
+- Marco M01/M02/M03/M04 e 40/40 subtarefas aceitos. Próximo: PKG-02, com isolamento real shared A/B, dedicated C, sessões/MFA, papéis, RLS e topologias executáveis. Pacotes futuros mantêm seus gates independentes de integração, sandbox e produção.
