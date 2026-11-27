@@ -30,6 +30,23 @@ function parseBlocks(value: unknown): Block[] {
   return blocks;
 }
 
+function reconcileBlocks(content: string, previous: Block[]): Block[] {
+  if (!content) return [];
+  const available = new Map<string, string[]>();
+  for (const block of previous) {
+    const ids = available.get(block.text) ?? [];
+    ids.push(block.id);
+    available.set(block.text, ids);
+  }
+  const lines = content.split("\n");
+  // Adjacent lines above the block-count ceiling remain one final block.
+  if (lines.length > 300)
+    lines.splice(299, Infinity, lines.slice(299).join("\n"));
+  return lines.map((text) => ({
+    text,
+    id: available.get(text)?.shift() ?? randomUUID(),
+  }));
+}
 type Page = {
   id: string;
   space_id: string;
@@ -245,7 +262,10 @@ export class Wiki {
       content = body.content === undefined ? template.content : content;
       metadata = { ...template.fields, ...metadata };
     }
-    const blocks = body.blocks === undefined ? [] : parseBlocks(body.blocks);
+    const blocks =
+      body.blocks === undefined
+        ? reconcileBlocks(content, [])
+        : parseBlocks(body.blocks);
     if (body.blocks !== undefined)
       content = blocks.map((block) => block.text).join("\n");
     await this.validateMetadata(space, metadata);
@@ -610,7 +630,7 @@ export class Wiki {
           ? parseBlocks(body.blocks)
           : body.content === undefined
             ? page.blocks
-            : [];
+            : reconcileBlocks(document(body.content), page.blocks);
       const content =
         body.blocks !== undefined
           ? blocks.map((block) => block.text).join("\n")
@@ -1031,7 +1051,7 @@ export class Wiki {
     const blocks = page.blocks.map((block) => block.id);
     if (method === "GET")
       return (
-        await sql`select id,root_id,actor_id,anchor,body,resolved,history,created_at,(anchor is not null and not (anchor=any(${blocks}::uuid[]))) as orphaned
+        await sql`select id,root_id,actor_id,anchor,body,resolved,history,created_at,coalesce(actor_id=${this.member},false) as editable,(anchor is not null and not (anchor=any(${blocks}::uuid[]))) as orphaned
       from km.wiki_comments where page_id=${key} order by created_at,id`.execute(
           this.tx,
         )

@@ -10,13 +10,21 @@ type Summary = {
   space_id: string | null;
   snippet: string | null;
 };
-type Page = Summary & { content: string; revision: number; tags: string[] };
+type Page = Summary & {
+  content: string;
+  revision: number;
+  tags: string[];
+  blocks: { id: string; text: string }[];
+};
 type Comment = {
   id: string;
   body: string;
   resolved: boolean;
   anchor: string | null;
   orphaned: boolean;
+  root_id: string | null;
+  editable: boolean;
+  history: { at: string; body: string; resolved: boolean }[];
 };
 type Attachment = {
   id: string;
@@ -42,6 +50,10 @@ export function Wiki({ token }: { token: string }) {
   const [space, setSpace] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [trash, setTrash] = useState<
+    { id: string; kind: string; deleted_at: string }[]
+  >([]);
+  const [showTrash, setShowTrash] = useState(false);
   const [preview, setPreview] = useState<string>();
   const dragged = useRef<string | null>(null);
 
@@ -214,6 +226,58 @@ export function Wiki({ token }: { token: string }) {
           refresh={() => browse()}
         />
       )}
+      <button
+        onClick={() =>
+          attempt(async () => {
+            setTrash(await call("/trash"));
+            setShowTrash(true);
+          })
+        }
+      >
+        Abrir lixeira
+      </button>
+      {showTrash && (
+        <section aria-label="Lixeira">
+          <h3>Lixeira</h3>
+          <button onClick={() => setShowTrash(false)}>Fechar lixeira</button>
+          {!trash.length && <p>Nenhum item visível.</p>}
+          <ul>
+            {trash.map((item) => (
+              <li key={item.id}>
+                {item.kind === "space" ? "Espaço" : "Documento"} · {item.id}
+                <button
+                  onClick={() =>
+                    attempt(async () => {
+                      await call("/trash/" + item.id + "/restore", "POST", {
+                        kind: item.kind,
+                      });
+                      setTrash(await call("/trash"));
+                      setSpaces(await call("/spaces"));
+                      await browse();
+                    })
+                  }
+                >
+                  Restaurar
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm("Purgar definitivamente este item?"))
+                      attempt(async () => {
+                        await call("/trash/" + item.id + "/purge", "POST", {
+                          kind: item.kind,
+                          confirm: item.id,
+                        });
+                        setTrash(await call("/trash"));
+                      });
+                  }}
+                >
+                  Purgar definitivamente
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {tree(null)}
       <details>
         <summary>Criar espaço</summary>
@@ -295,6 +359,22 @@ export function Wiki({ token }: { token: string }) {
               <button>Salvar documento</button>
             </form>
           </details>
+          <button
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Mover este documento e seus descendentes para a lixeira?",
+                )
+              )
+                attempt(async () => {
+                  await call("/pages/" + current.id, "DELETE");
+                  setCurrent(undefined);
+                  await browse();
+                });
+            }}
+          >
+            Mover documento para a lixeira
+          </button>
           <h4>Comentários</h4>
           <ul>
             {comments.map((comment) => (
@@ -306,6 +386,37 @@ export function Wiki({ token }: { token: string }) {
                   : comment.anchor
                     ? " · Comentário no bloco"
                     : ""}
+                {comment.editable && !comment.root_id && (
+                  <button
+                    onClick={() =>
+                      attempt(async () => {
+                        await call(
+                          "/pages/" + current.id + "/comments/" + comment.id,
+                          "PATCH",
+                          { resolved: !comment.resolved },
+                        );
+                        await open(current.id);
+                      })
+                    }
+                  >
+                    {comment.resolved
+                      ? "Reabrir comentário"
+                      : "Resolver comentário"}
+                  </button>
+                )}
+                {comment.history.length > 0 && (
+                  <details>
+                    <summary>Histórico do comentário</summary>
+                    <ul>
+                      {comment.history.map((entry, index) => (
+                        <li key={entry.at + index}>
+                          {entry.body} ·{" "}
+                          {entry.resolved ? "Resolvido" : "Aberto"}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </li>
             ))}
           </ul>
@@ -314,6 +425,7 @@ export function Wiki({ token }: { token: string }) {
               submit(event, async (form) => {
                 await call("/pages/" + current.id + "/comments", "POST", {
                   text: form.get("text"),
+                  ...(form.get("anchor") ? { anchor: form.get("anchor") } : {}),
                 });
                 await open(current.id);
               })
@@ -322,6 +434,19 @@ export function Wiki({ token }: { token: string }) {
             <label>
               Novo comentário <input name="text" required maxLength={4000} />
             </label>
+            {!!current.blocks.length && (
+              <label>
+                Bloco do comentário{" "}
+                <select name="anchor">
+                  <option value="">Comentário geral</option>
+                  {current.blocks.map((block) => (
+                    <option key={block.id} value={block.id}>
+                      {block.text.slice(0, 120) || "Bloco vazio"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button>Comentar</button>
           </form>
           <details>

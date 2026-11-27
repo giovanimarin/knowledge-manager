@@ -52,9 +52,22 @@ test("U3 opens an authorized document, adds a comment and previews a clean attac
     wiki.getByRole("region", { name: "Prévia do anexo" }),
   ).toContainText("Prévia segura");
   await wiki.getByLabel("Novo comentário").fill("Comentário pelo navegador");
+  await wiki.getByLabel("Bloco do comentário").selectOption({ index: 1 });
   await wiki.getByRole("button", { name: "Comentar", exact: true }).click();
   await expect(
     wiki.getByText("Comentário pelo navegador", { exact: true }),
+  ).toBeVisible();
+  const thread = wiki
+    .getByRole("listitem")
+    .filter({ hasText: "Comentário pelo navegador" });
+  await expect(thread).toContainText("Comentário no bloco");
+  await thread.getByRole("button", { name: "Resolver comentário" }).click();
+  await expect(
+    thread.getByRole("button", { name: "Reabrir comentário" }),
+  ).toBeVisible();
+  await thread.getByText("Histórico do comentário").click();
+  await expect(
+    thread.getByText("Comentário pelo navegador · Aberto"),
   ).toBeVisible();
 });
 
