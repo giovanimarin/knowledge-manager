@@ -98,6 +98,9 @@ const fixtures = JSON.parse(
 const a = await connect(adminA);
 const b = await connect(reader.accessToken);
 try {
+  const invalidSession = await connect("inactive");
+  assert.equal(await invalidSession.closed, 4401);
+  assert.equal(invalidSession.frames.length, 0);
   const denied = await connect(adminB);
   assert.equal(await denied.closed, 4403);
   assert.equal(denied.frames.length, 0);

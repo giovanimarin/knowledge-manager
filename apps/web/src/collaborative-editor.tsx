@@ -228,7 +228,10 @@ export function CollaborativeEditor({
           status: number;
         };
         if (packet.type === "sync") {
-          if (packet.generation !== ref.generation) {
+          if (
+            packet.generation !== ref.generation ||
+            (!packet.write && pending.length > 0)
+          ) {
             if (ref.generation && pending.length)
               setMessage(
                 "O documento mudou fora da sessão. Alterações locais pendentes precisam ser refeitas.",

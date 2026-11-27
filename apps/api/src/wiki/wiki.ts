@@ -382,6 +382,7 @@ export class Wiki {
       await sql`update km.identity_resources set parent_id=${parent ?? space} where id=${root.id}`.execute(
         this.tx,
       );
+      await this.saveEditorVersion(root.id);
       await changeEpoch(this.tx, this.tenant);
       return { id: root.id };
     }
@@ -395,6 +396,7 @@ export class Wiki {
       await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,position,title,content,blocks,tags,category,metadata,owner_id,author_id)
         select tenant_id,${key},${space},${destination},case when id=${root.id} then ${position}::integer else position end,title,content,blocks,tags,category,metadata,owner_id,${this.member}
         from km.wiki_pages where id=${node.id}`.execute(this.tx);
+      await this.saveEditorVersion(key);
     }
     return { id: copies.get(root.id) };
   }

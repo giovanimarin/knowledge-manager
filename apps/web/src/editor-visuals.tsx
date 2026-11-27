@@ -10,7 +10,7 @@ export function Diagram({ source }: { source: string }) {
       !source.trim() ||
       source.length > 4000 ||
       source.includes("%%{") ||
-      source.startsWith("---")
+      source.trimStart().startsWith("---")
     )
       return;
     const timer = setTimeout(() => {

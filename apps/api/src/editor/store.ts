@@ -155,7 +155,6 @@ export class EditorStore {
     const page = await this.page(key);
     await this.require("content.edit", key);
     const state = await this.state(page);
-    if (gen !== state.generation) throw new IdentityError(409);
     const prior = (
       await sql<{
         revision: number;
@@ -171,6 +170,7 @@ export class EditorStore {
         throw new IdentityError(409);
       return { operationId: operation, sequence: prior.revision };
     }
+    if (gen !== state.generation) throw new IdentityError(409);
     const doc = new Y.Doc();
     let blocks: Block[], snapshot: Buffer;
     try {
