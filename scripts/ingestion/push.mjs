@@ -7,6 +7,7 @@ export async function pushSnapshot({
   mapped,
   signals = [],
   expectedCredentialVersion,
+  expectedSyncCursor,
 }) {
   const prefix = "/v1/ingestion/sources/" + source;
   async function api(path, body) {
@@ -53,10 +54,19 @@ export async function pushSnapshot({
     expectedCredentialVersion !== (credentialVersion ?? 0)
   )
     throw new Error("Source credential rotated during synchronization");
+  if (expectedSyncCursor !== undefined && expectedSyncCursor !== cursor)
+    throw new Error("Source changed after this synchronization started");
+  if (
+    credentialVersion &&
+    snapshot.checkpoint &&
+    (snapshot.before ?? null) !== nativeCursor
+  )
+    throw new Error("Concurrent import changed the provider checkpoint");
   const prior = new Map(records.map((object) => [object.remote_key, object]));
   const latest = new Set(snapshot.files.map((file) => file.remoteKey));
 
-  const pending = [];
+  const pending = [],
+    reads = [];
   for (const [key, object] of prior)
     if (
       (snapshot.delta ? snapshot.removed?.includes(key) : !latest.has(key)) &&
@@ -76,40 +86,51 @@ export async function pushSnapshot({
       file.remoteKey.split("/").at(-1) ||
       file.remoteKey
     ).slice(0, 160);
-    const content = allowed ? await snapshot.read(file) : "";
-    if (content.length > 50000)
-      throw new Error("Source content exceeds bounds");
-    pending.push({
+    const change = {
       ...file,
       title,
-      content,
+      content: "",
       operation: "upsert",
       acl: allowed ? "mapped-space" : "unknown",
-    });
+    };
+    if (allowed) reads.push(change);
+    else pending.push(change);
   }
   cursor ??= null;
-  if (
-    credentialVersion &&
-    snapshot.checkpoint &&
-    (snapshot.before ?? null) !== nativeCursor
-  )
-    throw new Error("Concurrent import changed the provider checkpoint");
   const checkpoint =
     credentialVersion &&
     snapshot.checkpoint &&
     snapshot.checkpoint !== nativeCursor
       ? { before: nativeCursor ?? null, after: snapshot.checkpoint }
       : null;
-  const length = Math.max(pending.length, checkpoint || signals.length ? 1 : 0);
-  for (let offset = 0; offset < length; offset += 10) {
+  const batches = [pending, reads].flatMap((changes) =>
+    Array.from({ length: Math.ceil(changes.length / 10) }, (_, index) =>
+      changes.slice(index * 10, index * 10 + 10),
+    ),
+  );
+  if (!batches.length && (checkpoint || signals.length)) batches.push([]);
+  for (const [index, changes] of batches.entries()) {
     const nextCursor = randomUUID();
+    const entries = [];
+    for (const change of changes) {
+      const content =
+        change.acl === "mapped-space"
+          ? await snapshot.read(change)
+          : change.content;
+      if (content?.length > 50000)
+        throw new Error("Source content exceeds bounds");
+      entries.push({
+        ...change,
+        ...(content === undefined ? {} : { content }),
+      });
+    }
     await api("/sync", {
       id: randomUUID(),
       cursor,
       nextCursor,
-      entries: pending.slice(offset, offset + 10),
+      entries,
       ...(credentialVersion ? { credentialVersion } : {}),
-      ...(offset + 10 >= length
+      ...(index === batches.length - 1
         ? {
             ...(checkpoint ? { nativeCheckpoint: checkpoint } : {}),
             ...(signals.length ? { signals } : {}),
@@ -118,5 +139,5 @@ export async function pushSnapshot({
     });
     cursor = nextCursor;
   }
-  return pending.length;
+  return pending.length + reads.length;
 }

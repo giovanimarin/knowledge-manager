@@ -26,7 +26,7 @@ const connection = await sourceConnection({
   provider,
   target: container,
 });
-const { nativeCursor = null } = await connection.request("/objects");
+const { nativeCursor = null, cursor } = await connection.request("/objects");
 const principalIds = JSON.parse(KM_CLOUD_NATIVE_PRINCIPALS ?? "[]");
 if (
   !Array.isArray(principalIds) ||
@@ -64,6 +64,7 @@ const records = await pushSnapshot({
   base: KM_BASE_URL,
   session: KM_SOURCE_SESSION,
   mapped: false,
+  expectedSyncCursor: cursor,
   expectedCredentialVersion: connection.credentialVersion,
 });
 console.log(JSON.stringify({ provider, records }));

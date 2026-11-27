@@ -36,6 +36,7 @@ if (
     typeof credentials.secretAccessKey !== "string")
 )
   throw new Error("Invalid source AWS credentials");
+const { cursor } = await connection.request("/objects");
 const snapshot = await s3Source({
   bucket,
   region: AWS_REGION,
@@ -47,6 +48,7 @@ const records = await pushSnapshot({
   source,
   base: KM_BASE_URL,
   session: KM_SOURCE_SESSION,
+  expectedSyncCursor: cursor,
   expectedCredentialVersion: connection.credentialVersion,
   mapped: KM_S3_SOURCE_ACL === "mapped-space",
 });

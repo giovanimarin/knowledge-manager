@@ -21,6 +21,7 @@ const connection = await sourceConnection({
 const signals = (await connection.request("/signals")).map(
   (signal) => signal.delivery,
 );
+const { cursor } = await connection.request("/objects");
 const snapshot = await gitSource({
   provider,
   repository,
@@ -30,6 +31,7 @@ const snapshot = await gitSource({
 const records = await pushSnapshot({
   snapshot,
   signals,
+  expectedSyncCursor: cursor,
   expectedCredentialVersion: connection.credentialVersion,
   source,
   base: KM_BASE_URL,

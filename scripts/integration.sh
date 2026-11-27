@@ -81,6 +81,14 @@ for _ in {1..40}; do
 done
 docker exec "$embed_container" ollama pull "$KM_INGEST_EMBED_MODEL" > "$artifacts/embedding-model.log" 2>&1
 docker exec "$embed_container" ollama list >> "$artifacts/embedding-model.log"
+curl --noproxy '*' -fsS "http://127.0.0.1:$embed_port/api/tags" | node -e '
+let body = "";
+process.stdin.setEncoding("utf8").on("data", value => body += value).on("end", () => {
+  const model = JSON.parse(body).models.find(entry => entry.name === "bge-m3:latest");
+  if (!model?.digest?.startsWith("790764642607")) process.exit(1);
+  console.log("Modelo bge-m3 " + model.digest);
+});
+' | tee "$artifacts/embedding-digest.log"
 node scripts/ingest-embedding.mjs "$KM_OCR_DIR/embedding.sock" "$embed_port" "$KM_INGEST_EMBED_MODEL" --fixture &
 embed_pid=$!
 for _ in {1..40}; do
@@ -89,6 +97,8 @@ for _ in {1..40}; do
 done
 [[ -S "$KM_OCR_DIR/embedding.sock" ]]
 [[ "$(stat -c %a "$KM_OCR_DIR/embedding.sock")" == 666 ]]
+node scripts/ingestion/semantic-fixture.mjs "$KM_OCR_DIR/embedding.sock" \
+  "$KM_INGEST_EMBED_MODEL" "$KM_INGEST_EMBED_DIMENSION" "$artifacts/embedding-g3.json"
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
