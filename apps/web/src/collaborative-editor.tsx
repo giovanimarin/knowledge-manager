@@ -366,6 +366,22 @@ export function CollaborativeEditor({
       } else textChanges(text, value);
     });
   }
+  function selectCommand(index: number, next: Kind) {
+    change((array) => {
+      const block = array.get(index);
+      block.set("kind", next);
+      if (next === "checklist") block.set("checked", false);
+      textChanges(block.get("text") as Y.Text, "");
+    });
+  }
+  function commands(block: Block) {
+    if (!writable || block.kind !== "text" || !/^\/[a-z]*$/i.test(block.text))
+      return [];
+    const query = block.text.slice(1).toLowerCase();
+    return Object.keys(options).filter((entry) =>
+      entry.startsWith(query),
+    ) as Kind[];
+  }
   function mark(marker: string) {
     const field = focused.current;
     if (!field) return;
@@ -459,6 +475,13 @@ export function CollaborativeEditor({
                       focused.current = event.currentTarget;
                     }}
                     onChange={(event) => edit(index, event)}
+                    onKeyDown={(event) => {
+                      const first = commands(block)[0];
+                      if (event.key === "Enter" && first) {
+                        event.preventDefault();
+                        selectCommand(index, first);
+                      }
+                    }}
                     onSelect={(event) =>
                       session.current?.send("cursor", {
                         blockId: block.id,
@@ -467,6 +490,19 @@ export function CollaborativeEditor({
                     }
                   />
                 </label>
+                {commands(block).length > 0 && (
+                  <div role="group" aria-label="Comandos de bloco">
+                    {commands(block).map((command) => (
+                      <button
+                        key={command}
+                        type="button"
+                        onClick={() => selectCommand(index, command)}
+                      >
+                        {options[command]}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {block.kind === "checklist" && (
                   <label>
                     <input

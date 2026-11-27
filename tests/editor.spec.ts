@@ -50,7 +50,11 @@ test("two browser clients share rich autosave and can open a retained comparison
     await b
       .getByRole("textbox", { name: /Texto [0-9]+$/ })
       .last()
-      .fill("/checklist ");
+      .fill("/check");
+    await b
+      .getByRole("group", { name: "Comandos de bloco" })
+      .getByRole("button", { name: "Checklist", exact: true })
+      .click();
     await b
       .getByRole("textbox", { name: /Checklist [0-9]+$/ })
       .last()
