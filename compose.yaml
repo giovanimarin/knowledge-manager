@@ -83,6 +83,13 @@ services:
       KM_INGEST_EMBED_URL: ${KM_INGEST_EMBED_URL:-}
       KM_INGEST_EMBED_MODEL: ${KM_INGEST_EMBED_MODEL:-}
       KM_INGEST_EMBED_DIMENSION: ${KM_INGEST_EMBED_DIMENSION:-}
+      KM_INGEST_OCR_SOCKET: ${KM_INGEST_OCR_SOCKET:-}
+    volumes:
+      - storage:/var/lib/km
+      - type: bind
+        source: ${KM_OCR_DIR:-./infra}
+        target: /km-ocr
+        read_only: true
     command: [node, worker/dist/main.js]
     healthcheck:
       <<: *health

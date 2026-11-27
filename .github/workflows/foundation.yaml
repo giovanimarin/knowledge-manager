@@ -40,7 +40,7 @@ jobs:
           node-version: 24.22.3
       - run: pnpm install --frozen-lockfile
       - run: cp /etc/ssl/certs/ca-certificates.crt "$KM_BUILD_CA"
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clamav-daemon
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clamav-daemon tesseract-ocr tesseract-ocr-eng tesseract-ocr-por
       - run: pnpm exec playwright install --with-deps chromium
       - run: |
           mkdir -p artifacts

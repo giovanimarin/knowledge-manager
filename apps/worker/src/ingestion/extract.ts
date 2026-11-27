@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { request } from "node:http";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -114,34 +114,56 @@ function pdf(bytes: Buffer): Promise<string> {
 
 const imageTypes = new Set(["png", "jpeg", "jpg", "webp", "gif"]);
 function ocr(bytes: Buffer): Promise<string> {
+  const socketPath = process.env.KM_INGEST_OCR_SOCKET;
+  if (!socketPath) throw new Error("OCR endpoint unavailable");
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      "tesseract",
-      ["stdin", "stdout", "-l", "por+eng", "--psm", "6"],
+    const req = request(
       {
-        stdio: ["pipe", "pipe", "ignore"],
-        env: { ...process.env, OMP_THREAD_LIMIT: "1" },
+        socketPath,
+        path: "/ocr",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": bytes.length,
+        },
+        signal: AbortSignal.timeout(4000),
+      },
+      (response) => {
+        if (response.statusCode !== 200) {
+          response.resume();
+          reject(new Error("OCR failed"));
+          return;
+        }
+        const parts: Buffer[] = [];
+        let size = 0;
+        response.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > 1024 * 1024)
+            response.destroy(new Error("OCR response exceeds bounds"));
+          else parts.push(chunk);
+        });
+        response.on("error", reject);
+        response.on("end", () => {
+          try {
+            const data: unknown = JSON.parse(
+              Buffer.concat(parts).toString("utf8"),
+            );
+            if (
+              !data ||
+              typeof data !== "object" ||
+              !("text" in data) ||
+              typeof data.text !== "string"
+            )
+              throw new Error("Invalid OCR response");
+            resolve(data.text);
+          } catch (error) {
+            reject(error);
+          }
+        });
       },
     );
-    const parts: Buffer[] = [];
-    let size = 0;
-    const timeout = setTimeout(() => child.kill("SIGKILL"), 2500);
-    child.stdin.on("error", () => {});
-    child.stdout.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > 600000) child.kill("SIGKILL");
-      else parts.push(chunk);
-    });
-    child.on("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("OCR unavailable"));
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code === 0) resolve(Buffer.concat(parts).toString("utf8").trim());
-      else reject(new Error("OCR failed"));
-    });
-    child.stdin.end(bytes);
+    req.on("error", reject);
+    req.end(bytes);
   });
 }
 

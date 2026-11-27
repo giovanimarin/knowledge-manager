@@ -29,6 +29,7 @@ cleanup() {
       compose down -v --remove-orphans >/dev/null 2>&1
     fi
   done
+  if [[ -n "${ocr_pid:-}" ]]; then kill "$ocr_pid" 2>/dev/null || true; fi
   bash scripts/wiki-clamd.sh stop "$KM_SCAN_DIR"
   if [[ -f "$KM_SCAN_DIR/clamd.log" ]]; then cp "$KM_SCAN_DIR/clamd.log" "$artifacts/clamd.log"; fi
   rm -rf -- "$scratch"
@@ -36,6 +37,19 @@ cleanup() {
 }
 trap cleanup EXIT
 bash scripts/wiki-clamd.sh start "$KM_SCAN_DIR"
+export KM_OCR_DIR="$scratch/ocr"
+export KM_INGEST_OCR_SOCKET=/km-ocr/ocr.sock
+mkdir -m 755 "$KM_OCR_DIR"
+tesseract --version
+node scripts/ingest-ocr.mjs "$KM_OCR_DIR/ocr.sock" > "$artifacts/ocr.log" 2>&1 &
+ocr_pid=$!
+for _ in {1..40}; do
+  [[ -S "$KM_OCR_DIR/ocr.sock" ]] && break
+  sleep .1
+done
+[[ -S "$KM_OCR_DIR/ocr.sock" ]]
+# Containers on the disposable runner use a different uid from the host.
+chmod 666 "$KM_OCR_DIR/ocr.sock"
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
