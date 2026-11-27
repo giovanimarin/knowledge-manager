@@ -20,6 +20,13 @@ RUN --mount=type=secret,id=build_ca \
 
 FROM node:24.22.3-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS runtime
 WORKDIR /app
+RUN --mount=type=secret,id=build_ca,mode=0444 \
+    set -eu; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    if [ -f /run/secrets/build_ca ]; then printf 'Acquire::https::CaInfo "/run/secrets/build_ca";\n' > /etc/apt/apt.conf.d/99-build-ca; fi; \
+    apt-get -o APT::Update::Error-Mode=any update; \
+    apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-por tesseract-ocr-eng; \
+    rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99-build-ca
 RUN install -d -o node -g node -m 0750 /var/lib/km /var/lib/km/objects
 COPY --chown=node:node --from=build /out/api /app/api
 COPY --chown=node:node --from=build /out/worker /app/worker

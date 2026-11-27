@@ -369,6 +369,14 @@ try {
     data: Buffer.from("FROZEN ATTACHMENT").toString("base64"),
   });
   assert.equal(captured.scanState, "clean");
+  const scanImage = await request("POST", assetPath, {
+    filename: "ocr.png",
+    contentType: "image/png",
+    data: readFileSync(
+      new URL("../contracts/fixtures/ingestion/ocr-pt-en.png", import.meta.url),
+    ).toString("base64"),
+  });
+  assert.equal(scanImage.scanState, "clean");
   const published = await request("POST", route + "/publication", {
     revision: review.revision,
     expectedRevision: restored.revision,
@@ -425,6 +433,9 @@ try {
         row.block_id === captured.id && row.content === "FROZEN ATTACHMENT",
     ),
   );
+  const recognized = chunks.find((row) => row.block_id === scanImage.id);
+  assert.match(recognized?.content ?? "", /ACESSO SEGURO/);
+  assert.match(recognized?.content ?? "", /SECURE ACCESS/);
   const later = await request("POST", assetPath, {
     filename: "later.txt",
     contentType: "text/plain",

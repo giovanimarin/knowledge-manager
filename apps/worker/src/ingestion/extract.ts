@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -111,6 +112,39 @@ function pdf(bytes: Buffer): Promise<string> {
   });
 }
 
+const imageTypes = new Set(["png", "jpeg", "jpg", "webp", "gif"]);
+function ocr(bytes: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "tesseract",
+      ["stdin", "stdout", "-l", "por+eng", "--psm", "6"],
+      {
+        stdio: ["pipe", "pipe", "ignore"],
+        env: { ...process.env, OMP_THREAD_LIMIT: "1" },
+      },
+    );
+    const parts: Buffer[] = [];
+    let size = 0;
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 2500);
+    child.stdin.on("error", () => {});
+    child.stdout.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 600000) child.kill("SIGKILL");
+      else parts.push(chunk);
+    });
+    child.on("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("OCR unavailable"));
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) resolve(Buffer.concat(parts).toString("utf8").trim());
+      else reject(new Error("OCR failed"));
+    });
+    child.stdin.end(bytes);
+  });
+}
+
 export async function extract(
   file: Attachment,
   tenant: string,
@@ -118,7 +152,8 @@ export async function extract(
   const ext = file.filename.split(".").at(-1)?.toLowerCase();
   if (
     !ext ||
-    !["txt", "md", "csv", "pdf", "docx", "xlsx", "pptx"].includes(ext)
+    (!imageTypes.has(ext) &&
+      !["txt", "md", "csv", "pdf", "docx", "xlsx", "pptx"].includes(ext))
   )
     return null;
   if (!uuid.test(tenant) || !uuid.test(file.id))
@@ -133,6 +168,7 @@ export async function extract(
     throw new Error("Attachment integrity mismatch");
   let text: string;
   if (ext === "pdf") text = await pdf(bytes);
+  else if (imageTypes.has(ext)) text = await ocr(bytes);
   else if (["docx", "xlsx", "pptx"].includes(ext)) {
     const entries = officeFiles(bytes);
     if (ext === "docx") {
