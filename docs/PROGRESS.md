@@ -3,9 +3,11 @@
 Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 3/18 pacotes aceitos. PKG-01, PKG-02 e PKG-03 concluídos; PKG-04 é o próximo pacote.
 
 ## Método
+
 Atualizar em cada PR: pacote, marco, tarefa/subtarefa, estado (pendente, em execução, bloqueado, em validação, concluído), evidência por commit/teste, pendências e próximo passo. Não inferir progresso de código escrito. Concluído exige evidência e aceite aplicável. Percentual do pacote ponderado por marcos e fração de subtarefas verificadas; pesos iniciais PKG-01 22/28/28/22, revisáveis explicitamente. Percentual global de pacotes aceitos separado de esforço ponderado e de prontidão comercial. Gates sandbox/produção pendentes não contam como comprovados. Registrar tempo real quando disponível, sem inventar horas. Manter roadmap e escopo normativo intactos.
 
 ## Pacotes
+
 PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 concluído e integrado; PKG-03 autorizado para planejamento e implementação; PKG-04,05,06,07,08,09,10,11,11S,12,12B,13,13S,14,15 pendentes.
 
 ## PKG-01 — acompanhamento de implementação
@@ -13,6 +15,7 @@ PKG-00 e 00B aceitos documentalmente. PKG-01 concluído e integrado; PKG-02 conc
 Contratos publicados antes do código. O percentual global de pacotes aceitos é 1/18 após revisão e prova dos gates obrigatórios. A decomposição e os pesos originais foram mantidos.
 
 ### M01 — Estrutura (22%)
+
 - [x] M01.01 Contratos instalação/smoke/readiness/restore — **concluído**. Contrato C10 publicado inicialmente em `b6a7fd2`, reaplicado em `0f4a4de` sobre main. OpenAPI e exemplos aprovados pelo teste local.
 - [x] M01.02 Monorepo pnpm — **concluído**. Lockfile congelado instalado em worktree limpo em 10,3 s.
 - [x] M01.03 Versões e dependências — **concluído**. Node 24.22.3, pnpm 11.25.0, versões fixas e 308 entradas verificadas da lockfile.
@@ -25,6 +28,7 @@ Contratos publicados antes do código. O percentual global de pacotes aceitos é
 - [x] M01.10 Regras imports — **concluído**. Teste de fronteiras AST passou em `pnpm verify`.
 
 ### M02 — Infraestrutura (28%)
+
 - [x] M02.01 Dockerfiles/imagens — **concluído**. Worktree limpo compilou imagens pinadas e extensão pgvector com tarball SHA-256.
 - [x] M02.02 Compose — **concluído**. Compose iniciou o projeto limpo e topologias separadas de restore; rede interna e ingress web sem NAT confirmados.
 - [x] M02.03 PostgreSQL — **concluído**. PostgreSQL 17.10 saudável, indisponibilidade real e recuperação observadas.
@@ -37,6 +41,7 @@ Contratos publicados antes do código. O percentual global de pacotes aceitos é
 - [x] M02.10 Comunicação — **concluído**. Smoke via web → API → dependências e worker → fila/DB. Só web exposta em loopback.
 
 ### M03 — CI e qualidade (28%)
+
 - [x] M03.01 Actions — **concluído**. Três jobs nomeados no GitHub Actions. [Execução do head 36674ce](https://github.com/giovanimarin/knowledge-manager/actions/runs/45907172008).
 - [x] M03.02 Checks obrigatórios/permissões — **concluído**. A API listou os três checks obrigatórios do ruleset Main Protection (28200918) em `main`. O PR descartável #6 teve uma reprovação intencional e dois checks aprovados. O GitHub informou `mergeable_state: blocked` com `mergeable: true` e o PR fora de rascunho. [Evidência da API](https://github.com/giovanimarin/knowledge-manager/actions/runs/45913390185/job/140227491293).
 - [x] M03.03 Build/lint/tipos — **concluído**. Build, lint, format e tipos passaram localmente.
@@ -49,6 +54,7 @@ Contratos publicados antes do código. O percentual global de pacotes aceitos é
 - [x] M03.10 Relatórios/evidências — **concluído**. Esta trilha registra evidências locais e o resultado por commit. [Workflow e artefatos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45907172008).
 
 ### M04 — Operação (22%)
+
 - [x] M04.01 Setup/start — **concluído**. Setup limpo, subida, smoke e reinício de dependências verificados com Compose real.
 - [x] M04.02 Stop/migrations — **concluído**. Stop e up/down/up da migração comprovados no projeto descartável.
 - [x] M04.03 Backup consistente — **concluído**. Pausa dos escritores e snapshot DB/storage verificados. Backup com retomada em 10 s.
@@ -82,32 +88,30 @@ Validação ponderada **100%** (M01 10/10, M02 10/10, M03 10/10, M04 10/10). Ess
 
 Estimativa de 128–208 h, conforme roadmap. Os pesos totalizam 100%. A fração validada de subtarefas de cada linha pondera o progresso do pacote. A revisão e os gates continuam obrigatórios. Inicialmente nenhuma subtarefa de implementação está comprovada.
 
-| Marco | Peso | Estimativa | Tarefas e subtarefas | Aceite |
-| --- | --- | --- | --- | --- |
-| I1 Contratos e isolamento | 25% | 32–52 h | I1.1 contratos C1/U2 e negativos; I1.2 migração versionada, papéis e FKs; I1.3 contexto RLS transacional; I1.4 auditoria e revogação duráveis | A/B no mesmo banco e C dedicado. Ausência de contexto nega, escrita transversal falha, auditoria não se altera em runtime. |
-| I2 Identidade e sessão | 30% | 38–62 h | I2.1 bootstrap e convites/membership; I2.2 local/Argon2id, limites e recuperação; I2.3 TOTP, códigos e step-up; I2.4 rotação, expiração, logout, revogação | Provar uso único, replay, política de senha, isolamento por organização e troca explícita. |
-| I3 Autorização e serviços | 25% | 32–52 h | I3.1 papéis/grupos e administração; I3.2 RBAC/ABAC, herança e grants temporários; I3.3 API keys e client credentials; I3.4 delegação e introspecção | Default deny, deny prioritário, tenant admin sem leitura implícita, delegação por interseção. |
-| I4 Topologias e qualidade | 20% | 26–42 h | I4.1 C dedicado e shared A/B; I4.2 escala API/worker com leases e quotas; I4.3 testes HTTP/DB/UI e regressão PKG-01; I4.4 auditorias, runbook e aceite | Evidência de ambientes reais locais, três checks, negativas entre stacks e teste concorrente. |
+| Marco                     | Peso | Estimativa | Tarefas e subtarefas                                                                                                                                       | Aceite                                                                                                                     |
+| ------------------------- | ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| I1 Contratos e isolamento | 25%  | 32–52 h    | I1.1 contratos C1/U2 e negativos; I1.2 migração versionada, papéis e FKs; I1.3 contexto RLS transacional; I1.4 auditoria e revogação duráveis              | A/B no mesmo banco e C dedicado. Ausência de contexto nega, escrita transversal falha, auditoria não se altera em runtime. |
+| I2 Identidade e sessão    | 30%  | 38–62 h    | I2.1 bootstrap e convites/membership; I2.2 local/Argon2id, limites e recuperação; I2.3 TOTP, códigos e step-up; I2.4 rotação, expiração, logout, revogação | Provar uso único, replay, política de senha, isolamento por organização e troca explícita.                                 |
+| I3 Autorização e serviços | 25%  | 32–52 h    | I3.1 papéis/grupos e administração; I3.2 RBAC/ABAC, herança e grants temporários; I3.3 API keys e client credentials; I3.4 delegação e introspecção        | Default deny, deny prioritário, tenant admin sem leitura implícita, delegação por interseção.                              |
+| I4 Topologias e qualidade | 20%  | 26–42 h    | I4.1 C dedicado e shared A/B; I4.2 escala API/worker com leases e quotas; I4.3 testes HTTP/DB/UI e regressão PKG-01; I4.4 auditorias, runbook e aceite     | Evidência de ambientes reais locais, três checks, negativas entre stacks e teste concorrente.                              |
 
 Federação externa, vínculos de canal, aplicação das ACLs aos dados de cada domínio, console de control plane completo e migração operacional permanecem nas fronteiras aprovadas dos pacotes responsáveis. [Mapa de decisão](specification/traceability.md) · [Contratos PKG-02](packages/PKG-02-contracts.md).
-
 
 ## PKG-02 — execução e evidências
 
 O plano foi registrado no commit `636adc5`, antes da implementação. O [PR #8](https://github.com/giovanimarin/knowledge-manager/pull/8) inclui o commit `cd51164` do PR #7, que foi fechado sem merge. O conteúdo do encerramento formal do PKG-01 foi preservado. Os três checks do PR #7 passaram na [execução 45924055966](https://github.com/giovanimarin/knowledge-manager/actions/runs/45924055966). O aceite do PKG-02 é separado do aceite já registrado do PKG-01.
 
-| Marco | Subtarefas verificadas | Evidência e pendências |
-| --- | --- | --- |
-| I1 | I1.1–I1.4 | Contratos OpenAPI e Problem Details, RLS/DDL com papel de runtime, FKs compostas, auditoria e revogação. Implementação `f83a8f9`; suspensão de identidade após restauro e rollback independente `1cbb5ec`. |
-| I2 | I2.1–I2.4 | Bootstrap, convites, senhas Argon2id, limites, MFA e códigos de recuperação, rotatividade e reuso, revogação ativa e troca de empresa. [Roteiro de operação](packages/PKG-02-runbook.md). |
-| I3 | I3.1–I3.4 | Papéis e grupos, herança, negação prioritária, administração sem privilégio implícito de conteúdo, chaves de API e delegação testadas com tokens e banco reais. Reforços `7f2d251`. |
-| I4 | I4.1 e I4.3 | Shared A/B e dedicado C, bloqueio entre stacks, regressão de inicialização limpa, falhas do banco e Redis, backup, restore e migrações; instalação dedicada de organização única em `62e9fea` e saída estruturada em `e11db06`. |
-| I4 | I4.2 e I4.4 concluídas | `0bf5f46` aplica limites e leases no worker. O Actions comprovou duas réplicas, dois tenants simultâneos, isolamento de quotas, pico global, renovação, expiração, recuperação, retry e nenhum efeito duplicado. Os três checks do commit passaram, incluindo regressão do PKG-01 e isolamento shared/dedicated. Revisão final realizada, PR #8 integrado no commit `bbe7d08f2a05dca3fe5a42fd2d33cdd6747cd7a0`. |
+| Marco | Subtarefas verificadas | Evidência e pendências                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1    | I1.1–I1.4              | Contratos OpenAPI e Problem Details, RLS/DDL com papel de runtime, FKs compostas, auditoria e revogação. Implementação `f83a8f9`; suspensão de identidade após restauro e rollback independente `1cbb5ec`.                                                                                                                                                                                                      |
+| I2    | I2.1–I2.4              | Bootstrap, convites, senhas Argon2id, limites, MFA e códigos de recuperação, rotatividade e reuso, revogação ativa e troca de empresa. [Roteiro de operação](packages/PKG-02-runbook.md).                                                                                                                                                                                                                       |
+| I3    | I3.1–I3.4              | Papéis e grupos, herança, negação prioritária, administração sem privilégio implícito de conteúdo, chaves de API e delegação testadas com tokens e banco reais. Reforços `7f2d251`.                                                                                                                                                                                                                             |
+| I4    | I4.1 e I4.3            | Shared A/B e dedicado C, bloqueio entre stacks, regressão de inicialização limpa, falhas do banco e Redis, backup, restore e migrações; instalação dedicada de organização única em `62e9fea` e saída estruturada em `e11db06`.                                                                                                                                                                                 |
+| I4    | I4.2 e I4.4 concluídas | `0bf5f46` aplica limites e leases no worker. O Actions comprovou duas réplicas, dois tenants simultâneos, isolamento de quotas, pico global, renovação, expiração, recuperação, retry e nenhum efeito duplicado. Os três checks do commit passaram, incluindo regressão do PKG-01 e isolamento shared/dedicated. Revisão final realizada, PR #8 integrado no commit `bbe7d08f2a05dca3fe5a42fd2d33cdd6747cd7a0`. |
 
 Validação ponderada registrada **100%** (I1 4/4, I2 4/4, I3 4/4, I4 4/4). Pacotes aceitos **2/18 (11,1%)**. A primeira rodada integrada passou pelos três checks em `f83a8f9`. O replay de prova de MFA, o bloqueio após restore e o provisionamento dedicado foram refinados nas rodadas seguintes. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45925880256) · [Execução do código após os refinamentos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45926503444).
 
 A tentativa de repetir toda a instalação no runner local foi interrompida por falta de espaço no armazenamento Docker. A validação Compose completa segue no GitHub Actions, em instalações descartáveis. Gates de sandbox e rollout continuam vinculados aos pacotes definidos no roadmap.
-
 
 ### Evidência da revisão técnica I4.2 e I4.4
 
@@ -126,12 +130,12 @@ A tentativa de repetir toda a instalação no runner local foi interrompida por 
 
 Estimativa de 128–216 h do roadmap. O peso de cada marco é distribuído igualmente entre suas quatro subtarefas. Validação inicial 0/16. Aceite do pacote depende de revisão e dos gates aplicáveis.
 
-| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
-| --- | --- | --- |
-| W1 Espaços, acl e árvore · 30% | 38–64 h | W1.1 espaços e participação múltipla com negação padrão; W1.2 documentos e navegação multinível com IDs estáveis; W1.3 mover/duplicar sem ciclos nem mutação parcial e com verificação de origem/destino; W1.4 revogação ativa e isolamento A/B/C, inclusive em resultados derivados. |
-| W2 Interação e recuperação de conteúdo · 25% | 32–54 h | W2.1 threads ancoradas/gerais com histórico, resolução e menções autorizadas; W2.2 metadados por espaço, responsáveis, classificação e filtros; W2.3 backlinks, tipos, links quebrados e exploração autorizada; W2.4 busca textual com filtros e sem snippets ou contagens de documentos negados. |
-| W3 Arquivos e ciclo de vida · 30% | 38–66 h | W3.1 anexos e limites por empresa com validação, scan, visualização e download autorizado; W3.2 importação/exportação no escopo C3 com fixtures de fidelidade e manifesto de perdas; W3.3 templates com revisões independentes; W3.4 exclusão e restauração da subárvore/espaço, retenção e purga auditada. |
-| W4 Experiência e evidência · 15% | 20–32 h | W4.1 interface U3/U4 acessível e sem metadados negados; W4.2 contrato e integração reais com negativos por operação; W4.3 regressão 01/02 e três checks; W4.4 relatório com artefatos e medições G1/G2/G3 aplicáveis. |
+| Marco e peso                                 | Estimativa | Subtarefas e critérios verificáveis                                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W1 Espaços, acl e árvore · 30%               | 38–64 h    | W1.1 espaços e participação múltipla com negação padrão; W1.2 documentos e navegação multinível com IDs estáveis; W1.3 mover/duplicar sem ciclos nem mutação parcial e com verificação de origem/destino; W1.4 revogação ativa e isolamento A/B/C, inclusive em resultados derivados.                       |
+| W2 Interação e recuperação de conteúdo · 25% | 32–54 h    | W2.1 threads ancoradas/gerais com histórico, resolução e menções autorizadas; W2.2 metadados por espaço, responsáveis, classificação e filtros; W2.3 backlinks, tipos, links quebrados e exploração autorizada; W2.4 busca textual com filtros e sem snippets ou contagens de documentos negados.           |
+| W3 Arquivos e ciclo de vida · 30%            | 38–66 h    | W3.1 anexos e limites por empresa com validação, scan, visualização e download autorizado; W3.2 importação/exportação no escopo C3 com fixtures de fidelidade e manifesto de perdas; W3.3 templates com revisões independentes; W3.4 exclusão e restauração da subárvore/espaço, retenção e purga auditada. |
+| W4 Experiência e evidência · 15%             | 20–32 h    | W4.1 interface U3/U4 acessível e sem metadados negados; W4.2 contrato e integração reais com negativos por operação; W4.3 regressão 01/02 e três checks; W4.4 relatório com artefatos e medições G1/G2/G3 aplicáveis.                                                                                       |
 
 [Contratos e fixtures](packages/PKG-03-contracts.md) · [Matriz normativa](specification/traceability.md)
 
@@ -139,12 +143,12 @@ Estimativa de 128–216 h do roadmap. O peso de cada marco é distribuído igual
 
 O PR #9 foi integrado em `25d1614` após os três checks do head aprovado passarem. O plano e as fixtures da wiki foram publicados em `d0ecfd3`, antes de `9e53159`. O [PR #10](https://github.com/giovanimarin/knowledge-manager/pull/10) concentra a implementação e suas validações. [Checks do PR #9](https://github.com/giovanimarin/knowledge-manager/actions/runs/45936011199)
 
-| Marco | Subtarefas com aceite comprovado | Evidências e pendências |
-| --- | --- | --- |
-| W1 | W1.1–W1.3 | Integração de espaços, múltiplos escopos, árvore, negação sem grant, ciclo e duplicação/movimento. W1.4 aguardava a prova C dedicada na rodada de referência. |
-| W2 | W2.3–W2.4 | Backlinks, links quebrados e ocultos, busca pt/en e negativos por autorização. Menções autorizadas e configuração de esquema foram acrescentadas posteriormente. Faltam testes de âncora órfã com blocos e evidência de cobertura de todos os filtros. |
-| W3 | W3.3 | Template versionado confirmado em REST, com páginas antigas preservadas. Quarentena passou, mas W3.1/W3.2 aguardam scan real, armazenamento privado e conversões/fidelidade. W3.4 tem restauração comprovada; a cobertura de purga e retenção requer a rodada posterior. |
-| W4 | W4.3 | Três checks, quatro cenários Playwright, regressões PKG-01/02 e auditoria/SBOM na rodada de referência. A cobertura de U3/U4, contratos e relatório G3 integral permanece aberta. |
+| Marco | Subtarefas com aceite comprovado | Evidências e pendências                                                                                                                                                                                                                                                  |
+| ----- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| W1    | W1.1–W1.3                        | Integração de espaços, múltiplos escopos, árvore, negação sem grant, ciclo e duplicação/movimento. W1.4 aguardava a prova C dedicada na rodada de referência.                                                                                                            |
+| W2    | W2.3–W2.4                        | Backlinks, links quebrados e ocultos, busca pt/en e negativos por autorização. Menções autorizadas e configuração de esquema foram acrescentadas posteriormente. Faltam testes de âncora órfã com blocos e evidência de cobertura de todos os filtros.                   |
+| W3    | W3.3                             | Template versionado confirmado em REST, com páginas antigas preservadas. Quarentena passou, mas W3.1/W3.2 aguardam scan real, armazenamento privado e conversões/fidelidade. W3.4 tem restauração comprovada; a cobertura de purga e retenção requer a rodada posterior. |
+| W4    | W4.3                             | Três checks, quatro cenários Playwright, regressões PKG-01/02 e auditoria/SBOM na rodada de referência. A cobertura de U3/U4, contratos e relatório G3 integral permanece aberta.                                                                                        |
 
 Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/4, W4 1/4). Pacotes aceitos **2/18**. A aprovação técnica do pacote foi concluída no head `6d5c293` e PR #10 integrado em `d11dadf`.
 
@@ -162,13 +166,13 @@ Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/
 
 **Gates locais verificados 16/16 · 100% ponderado.** O aceite do mantenedor e os gates de sandbox permanecem distintos. Pacotes formalmente aceitos **3/18** após revisão e integração do PKG-03.
 
-| Subtarefa | Evidência de conclusão |
-| --- | --- |
-| W2.1 | `b090083`, `ab12516`, `01dc1e9`. IDs de bloco sobrevivem à reordenação, a remoção deixa a âncora identificável, e o teste cobre histórico, resolução, menções e revogação. O browser exercita a seleção da âncora e o histórico. |
-| W3.1 | `b090083`, `6c00cfc`, `5b2474a`. ClamAV **1.5.4** no runner descartável. Falha do daemon mantém quarentena, reanálise libera o arquivo limpo, a assinatura local bloqueia a amostra sintética, e ACL, checksum, quota e replay são exercitados. A v5 move novos bytes para o volume privado e a v6 vincula o upload ao principal. |
-| W3.2 | `0064c28`, `fb51d45`, `6be9535`, `5b2474a`. Round trips Word/PDF/ZIP, HTML sanitizado, Markdown, referências e anexos de pacote Notion, pacote Confluence e manifestos de perdas. A fixture local não comprova interoperabilidade com os serviços externos. |
-| W3.4 | `a0aaf52`, `6be9535`. Restauração da subárvore e bytes, expiração da janela, auditoria da purga, tombstones e remoção física. Backup e restore passaram, com reconciliação de exclusões definitivas entre snapshots no PKG-14. |
-| W4.1/W4.2/W4.4 | `5b2474a`. Cinco cenários Playwright, incluindo U3 e U4 com negativa autenticada em outro espaço. Operações C2/C3 verificadas no contrato, integração e unitários. O relatório G3 registra filtros, busca, scan, ACL, formatos e retenção. |
+| Subtarefa      | Evidência de conclusão                                                                                                                                                                                                                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W2.1           | `b090083`, `ab12516`, `01dc1e9`. IDs de bloco sobrevivem à reordenação, a remoção deixa a âncora identificável, e o teste cobre histórico, resolução, menções e revogação. O browser exercita a seleção da âncora e o histórico.                                                                                                  |
+| W3.1           | `b090083`, `6c00cfc`, `5b2474a`. ClamAV **1.5.4** no runner descartável. Falha do daemon mantém quarentena, reanálise libera o arquivo limpo, a assinatura local bloqueia a amostra sintética, e ACL, checksum, quota e replay são exercitados. A v5 move novos bytes para o volume privado e a v6 vincula o upload ao principal. |
+| W3.2           | `0064c28`, `fb51d45`, `6be9535`, `5b2474a`. Round trips Word/PDF/ZIP, HTML sanitizado, Markdown, referências e anexos de pacote Notion, pacote Confluence e manifestos de perdas. A fixture local não comprova interoperabilidade com os serviços externos.                                                                       |
+| W3.4           | `a0aaf52`, `6be9535`. Restauração da subárvore e bytes, expiração da janela, auditoria da purga, tombstones e remoção física. Backup e restore passaram, com reconciliação de exclusões definitivas entre snapshots no PKG-14.                                                                                                    |
+| W4.1/W4.2/W4.4 | `5b2474a`. Cinco cenários Playwright, incluindo U3 e U4 com negativa autenticada em outro espaço. Operações C2/C3 verificadas no contrato, integração e unitários. O relatório G3 registra filtros, busca, scan, ACL, formatos e retenção.                                                                                        |
 
 Em `5b2474a`, os três checks passaram com as regressões 01/02 e isolamento shared/dedicated. O Playwright passou **5/5 em 4,1 s**. Backup em **10 s**, restauração em **15 s**. Com 15 requisições por cenário, busca filtrada p50 **18,06 ms** / p95 **22,80 ms** e sem filtro p50 **48,56 ms** / p95 **55,95 ms**. São medições em fixtures descartáveis. `pnpm verify` local executou 15 testes em **4,99 s**, sem omissões. [Run](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298) · [Relatórios, G3 e ClamAV](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298/artifacts/15198533115)
 
@@ -186,12 +190,12 @@ Rodadas intermediárias expuseram problemas de licença transitiva, advisories e
 
 Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o peso entre quatro subtarefas. Baseline 0/16 antes do código.
 
-| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
-| --- | --- | --- |
-| E1 Editor e blocos · 25% | 30–48 h | E1.1 validar tipos/IDs de blocos e round-trip; E1.2 formatação, listas/checklists e tabelas; E1.3 links, imagens, Mermaid, código e callouts seguros; E1.4 atalhos Markdown/slash, autosave e UI acessível. |
-| E2 Sessão e persistência · 35% | 42–67 h | E2.1 WebSocket autenticado com sync/update/ACK durável; E2.2 CRDT converge com clientes concorrentes, reconexão e reinício; E2.3 presença/cursores efêmeros; E2.4 negar revogação ativa e acessos shared/dedicated antes de leitura ou gravação. |
-| E3 Versões e publicação · 30% | 36–58 h | E3.1 histórico com autor/data, diff e retenção; E3.2 restauração como revisão nova; E3.3 revisão de snapshot, responsável, revisores e aprovação conforme política do espaço; E3.4 publicação imutável, validade, arquivamento e evento durável sem expor rascunho. |
-| E4 Evidência · 10% | 12–19 h | E4.1 contratos e negativos; E4.2 browser e WS multi-cliente; E4.3 regressões 01–03 e três checks; E4.4 relatório G1/G3 e runbook com limites comprovados. |
+| Marco e peso                   | Estimativa | Subtarefas e critérios verificáveis                                                                                                                                                                                                                                 |
+| ------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1 Editor e blocos · 25%       | 30–48 h    | E1.1 validar tipos/IDs de blocos e round-trip; E1.2 formatação, listas/checklists e tabelas; E1.3 links, imagens, Mermaid, código e callouts seguros; E1.4 atalhos Markdown/slash, autosave e UI acessível.                                                         |
+| E2 Sessão e persistência · 35% | 42–67 h    | E2.1 WebSocket autenticado com sync/update/ACK durável; E2.2 CRDT converge com clientes concorrentes, reconexão e reinício; E2.3 presença/cursores efêmeros; E2.4 negar revogação ativa e acessos shared/dedicated antes de leitura ou gravação.                    |
+| E3 Versões e publicação · 30%  | 36–58 h    | E3.1 histórico com autor/data, diff e retenção; E3.2 restauração como revisão nova; E3.3 revisão de snapshot, responsável, revisores e aprovação conforme política do espaço; E3.4 publicação imutável, validade, arquivamento e evento durável sem expor rascunho. |
+| E4 Evidência · 10%             | 12–19 h    | E4.1 contratos e negativos; E4.2 browser e WS multi-cliente; E4.3 regressões 01–03 e três checks; E4.4 relatório G1/G3 e runbook com limites comprovados.                                                                                                           |
 
 [Contratos e fixtures do PKG-04](packages/PKG-04-contracts.md)
 
@@ -199,12 +203,12 @@ Estimativa de 120–192 h conforme roadmap. Cada marco distribui igualmente o pe
 
 **Validação ponderada local e CI 100%, 16/16 subtarefas.** O PKG-04 segue para aceite técnico no PR #12. Pacotes formalmente aceitos: 3/18.
 
-| Marco | Subtarefas | Evidência |
-| --- | --- | --- |
-| E1 · 25% | E1.1–E1.4 verificadas | Fixtures de 10 tipos de bloco com IDs estáveis e negativos de tipo/URL. Chromium renderizou Mermaid, e duas sessões Playwright exerceram título, checklist, atalhos Markdown, sugestões slash, edição e autosave. `e6cae23`, `a50d409`, `013ee99`. |
-| E2 · 35% | E2.1–E2.4 verificadas | Dois usuários WebSocket convergiram em texto concorrente. PostgreSQL guarda snapshot, revisão e recibo antes do ACK. Presença/cursor, replay, reconexão, reinício real da API e revogação com sessão ativa exercitados. A/B shared e C dedicated tiveram negativas. `cdb6a4e`, `97daff3`. |
+| Marco    | Subtarefas            | Evidência                                                                                                                                                                                                                                                                                             |
+| -------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1 · 25% | E1.1–E1.4 verificadas | Fixtures de 10 tipos de bloco com IDs estáveis e negativos de tipo/URL. Chromium renderizou Mermaid, e duas sessões Playwright exerceram título, checklist, atalhos Markdown, sugestões slash, edição e autosave. `e6cae23`, `a50d409`, `013ee99`.                                                    |
+| E2 · 35% | E2.1–E2.4 verificadas | Dois usuários WebSocket convergiram em texto concorrente. PostgreSQL guarda snapshot, revisão e recibo antes do ACK. Presença/cursor, replay, reconexão, reinício real da API e revogação com sessão ativa exercitados. A/B shared e C dedicated tiveram negativas. `cdb6a4e`, `97daff3`.             |
 | E3 · 30% | E3.1–E3.4 verificadas | Histórico, diff, restauração como revisão nova, retenção após 30 dias e preservação da revisão aprovada. Espaço restrito exigiu aprovação, outro ator não aprovou, snapshot publicado permaneceu imutável, e expiração retirada/aviso ficaram registrados no outbox. `cdb6a4e`, `9ceb67e`, `1fe5db5`. |
-| E4 · 10% | E4.1–E4.4 verificadas | Contrato JSON e fixtures, 17 testes locais sem omissões, seis cenários Playwright, regressões PKG-01/02/03 e três checks verdes no head de código. Relatório G3 e runbook publicados. |
+| E4 · 10% | E4.1–E4.4 verificadas | Contrato JSON e fixtures, 17 testes locais sem omissões, seis cenários Playwright, regressões PKG-01/02/03 e três checks verdes no head de código. Relatório G3 e runbook publicados.                                                                                                                 |
 
 No commit `65270fc`, os seis cenários Playwright passaram em **7,1 s**. O smoke mediu **41 ms** para confirmar os dois updates, **43 ms** na reconexão, **7 ms** até a negação observada na tentativa após revogação e **3.607 ms** para reiniciar a API e recuperar o documento. Backup em **10 s** e restore em **15 s**. O `pnpm verify` local executou 17 testes em **5,29 s**. As latências são de um ensaio sintético. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310) · [Smoke, Playwright e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46044892310/artifacts/15221459518)
 
@@ -214,11 +218,28 @@ Rodadas anteriores detectaram importação dupla de Yjs no unitário, licenças 
 
 Estimativa de 184–320 h do roadmap. Cada marco distribui seu peso igualmente entre quatro subtarefas. Estado inicial 0/16. O PR #13 teve três checks verdes; a ação de integração foi bloqueada pela revisão automática. O trabalho parte da main, que já contém o PKG-04.
 
-| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
-| --- | --- | --- |
-| N1 Fila e geração · 30% | 55–96 h | N1.1 capturar publicação/retirada com recibos; N1.2 ativar com CAS sob concorrência; N1.3 retry e reprocessamento seguro, incluindo crash; N1.4 remover derivados e negar leituras após revogação. |
-| N2 Conteúdo e vetores · 30% | 55–96 h | N2.1 extrair conteúdo limpo conforme política de formato; N2.2 normalizar e segmentar blocos/listas/tabelas/código com offsets e hierarquia; N2.3 deduplicar por hash dentro do tenant mantendo referências; N2.4 gerar embeddings com perfil e verificar pgvector. |
-| N3 Conectores e sincronização · 30% | 55–96 h | N3.1 conexões locais wiki/uploads/crawler/REST; N3.2 adaptadores GitHub/GitLab/Bitbucket; N3.3 adaptadores Drive/SharePoint/OneDrive/Confluence/Notion; N3.4 S3/GCS, cursor incremental, exclusões, limites e ACL de origem. |
-| N4 Evidência · 10% | 19–32 h | N4.1 contratos/fixtures positivas e negativas; N4.2 integração local e isolamento A/B/C; N4.3 regressões 01–04 e três checks; N4.4 evidências G1/G3 e status G4 por provedor. |
+| Marco e peso                        | Estimativa | Subtarefas e critérios verificáveis                                                                                                                                                                                                                                 |
+| ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1 Fila e geração · 30%             | 55–96 h    | N1.1 capturar publicação/retirada com recibos; N1.2 ativar com CAS sob concorrência; N1.3 retry e reprocessamento seguro, incluindo crash; N1.4 remover derivados e negar leituras após revogação.                                                                  |
+| N2 Conteúdo e vetores · 30%         | 55–96 h    | N2.1 extrair conteúdo limpo conforme política de formato; N2.2 normalizar e segmentar blocos/listas/tabelas/código com offsets e hierarquia; N2.3 deduplicar por hash dentro do tenant mantendo referências; N2.4 gerar embeddings com perfil e verificar pgvector. |
+| N3 Conectores e sincronização · 30% | 55–96 h    | N3.1 conexões locais wiki/uploads/crawler/REST; N3.2 adaptadores GitHub/GitLab/Bitbucket; N3.3 adaptadores Drive/SharePoint/OneDrive/Confluence/Notion; N3.4 S3/GCS, cursor incremental, exclusões, limites e ACL de origem.                                        |
+| N4 Evidência · 10%                  | 19–32 h    | N4.1 contratos/fixtures positivas e negativas; N4.2 integração local e isolamento A/B/C; N4.3 regressões 01–04 e três checks; N4.4 evidências G1/G3 e status G4 por provedor.                                                                                       |
 
 [Contratos e plano de testes](packages/PKG-05-contracts.md)
+
+### Implementação e evidências do PKG-05
+
+**Validação ponderada de 70% em 12/16 subtarefas.** O PR #14 permanece em rascunho. Os pesos medem critérios já comprovados. As pendências abaixo continuam no escopo do pacote.
+
+| Marco      | Aceite comprovado | Evidências e pendências                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1 · 30/30 | N1.1–N1.4         | Publicação e retirada com recibos duráveis, CAS, reprocessamento concorrente, retry após falha injetada e reinício real do worker. Leitura revalida a ACL e a revogação de origem impede restauração por lixeira. `2f45c16`, `26ebe96`, `4659c7c`, `117a3d8`.                                                                                                                                                                            |
+| N2 · 15/30 | N2.2–N2.3         | Blocos, tabelas, offsets e deduplicação por hash com referência à origem. N2.1 parcial com PDF textual, OOXML, texto/CSV/Markdown e OCR de imagem com Tesseract em português/inglês. Faltam fixtures para PDF digitalizado e extensões Office legadas. N2.4 parcial com vetor lexical real em pgvector e fixture de Ollama. Faltam a execução de modelo semântico real e perfis versionados por tenant. `f6fe0b0`, `6140bcf`, `480c8f3`. |
+| N3 · 15/30 | N3.1–N3.2         | Crawler e servidor HTTP locais, lotes REST, exclusão, quarentena e protocolos Git com fixtures HTTP. N3.3–N3.4 parciais com fixtures dos adaptadores cloud e object storage. Faltam cursores nativos persistidos, credenciais por tenant, mapeamento das ACLs dos provedores, webhooks e ensaios autenticados G4. `790ae5d`, `feecd1f`, `4c73364`, `8332f68`.                                                                            |
+| N4 · 10/10 | N4.1–N4.4         | Contratos e fixtures publicados antes do código em `cc3ee7e`. Integração local com negativas shared/dedicated e regressões PKG-01 a PKG-04. Relatórios locais e de CI publicados. O estado de G4 está registrado como pendente para os provedores.                                                                                                                                                                                       |
+
+No head `66acc73`, passaram **3/3 checks obrigatórios**. O verify local executou **27 testes em 6,07 s**, sem falhas ou omissões. O smoke registrou **5.574 ms** para recuperar a ingestão no cenário de retry/reinício, **15 segmentos ativos** e **quatro pedidos simultâneos de reprocessamento**. O Tesseract **5.5.0** executou a fixture via socket privado. Os seis cenários Playwright passaram em **6,6 s** e o backup concluiu em **11 s**. O clean smoke também verificou restauração e rejeição de backup incompleto. As métricas descrevem o ambiente descartável do CI. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119) · [Smoke e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119/artifacts/15223533674) · [Auditoria e SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119/artifacts/15225015020)
+
+O ensaio anterior expôs uma fixture de lixeira ambígua e uma dependência nativa com vulnerabilidade crítica na imagem. A fixture de ingestão passou para um espaço próprio. A auditoria permaneceu obrigatória. Mermaid e KaTeX foram atualizados, e o Tesseract passou a rodar sob um processo local separado. [Runbook](packages/PKG-05-runbook.md)
+
+O PR #13 continua aberto após os três checks verdes. A revisão automática recusou a operação de merge por entender que a mudança na branch protegida não estava autorizada. O código do PKG-04 já estava na main usada como base. [Checks do PR #13](https://github.com/giovanimarin/knowledge-manager/actions/runs/46046471689) · [PR #14](https://github.com/giovanimarin/knowledge-manager/pull/14)
