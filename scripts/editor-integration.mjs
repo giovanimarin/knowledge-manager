@@ -266,7 +266,7 @@ try {
     ).changes.length,
   );
   const permissions = randomUUID();
-  db(`insert into km.identity_roles(tenant_id,id,name,actions) values ('${tenant}','${permissions}','Release proof',array['content.approve','content.publish']);
+  db(`insert into km.identity_roles(tenant_id,id,name,actions) values ('${tenant}','${permissions}','Release proof',array['content.approve','content.publish','knowledge.govern']);
     insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
      ('${tenant}',gen_random_uuid(),'${permissions}','${adminMemberA}','${root}','allow'),
      ('${tenant}',gen_random_uuid(),'${permissions}','${actor.id}','${root}','allow')`);
@@ -311,6 +311,64 @@ try {
      begin raise exception 'synthetic ingest transaction failure'; end $$;
      create trigger test_ingest_retry before insert on km.ingest_generations
      for each row execute function km.test_ingest_retry()`);
+  db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect)
+    values ('${tenant}',gen_random_uuid(),'${permissions}','${adminMemberA}','${original.space_id}','allow')`);
+  const connector = await request("POST", "/ingestion/sources", {
+    spaceId: original.space_id,
+    title: "Fixture REST",
+  });
+  const syncRoute = "/ingestion/sources/" + connector.id;
+  const remote = {
+    remoteKey: "first",
+    version: "v1",
+    operation: "upsert",
+    acl: "mapped-space",
+    title: "Fonte importada",
+    content: "A prova vem da origem.",
+  };
+  const batch = {
+    id: randomUUID(),
+    cursor: null,
+    nextCursor: "p1",
+    entries: [remote, { ...remote, remoteKey: "unmapped", acl: "unknown" }],
+  };
+  await request("POST", syncRoute + "/sync", batch);
+  assert.equal(
+    (await request("POST", syncRoute + "/sync", batch)).replayed,
+    true,
+  );
+  await request(
+    "POST",
+    syncRoute + "/sync",
+    { ...batch, id: randomUUID() },
+    adminA,
+    409,
+  );
+  const mapped = (await request("GET", syncRoute + "/objects")).objects;
+  assert.equal(
+    mapped.find((row) => row.remote_key === "unmapped").state,
+    "quarantine",
+  );
+  const created = mapped.find((row) => row.remote_key === "first").page_id;
+  assert.deepEqual(
+    await request("GET", "/ingestion/pages/" + created + "/chunks"),
+    [],
+  );
+  await request("POST", syncRoute + "/sync", {
+    id: randomUUID(),
+    cursor: "p1",
+    nextCursor: "p2",
+    entries: [{ remoteKey: "first", version: "v2", operation: "delete" }],
+  });
+  await request("GET", "/wiki/pages/" + created, undefined, adminA, 404);
+  await request("GET", syncRoute + "/objects", undefined, adminB, 404);
+  const assetPath = "/wiki/pages/" + root + "/attachments";
+  const captured = await request("POST", assetPath, {
+    filename: "origin.txt",
+    contentType: "text/plain",
+    data: Buffer.from("FROZEN ATTACHMENT").toString("base64"),
+  });
+  assert.equal(captured.scanState, "clean");
   const published = await request("POST", route + "/publication", {
     revision: review.revision,
     expectedRevision: restored.revision,
@@ -353,6 +411,18 @@ try {
         row.content.includes("Texto em português"),
     ),
   );
+  assert.ok(
+    chunks.some(
+      (row) =>
+        row.block_id === captured.id && row.content === "FROZEN ATTACHMENT",
+    ),
+  );
+  const later = await request("POST", assetPath, {
+    filename: "later.txt",
+    contentType: "text/plain",
+    data: Buffer.from("LATE ATTACHMENT").toString("base64"),
+  });
+  assert.equal(later.scanState, "clean");
   const initialIds = chunks.map((row) => row.id);
   const jobs = await Promise.all(
     Array.from({ length: 4 }, () =>
@@ -369,6 +439,17 @@ try {
   assert.deepEqual(
     (await request("GET", ingestPath + "/chunks")).map((row) => row.id),
     initialIds,
+  );
+  assert.ok(
+    !(await request("GET", ingestPath + "/chunks")).some(
+      (row) => row.block_id === later.id,
+    ),
+  );
+  await request("DELETE", assetPath + "/" + captured.id);
+  assert.ok(
+    !(await request("GET", ingestPath + "/chunks")).some(
+      (row) => row.block_id === captured.id,
+    ),
   );
   const live = await request("GET", route + "/publication");
   assert.equal(live.revision, review.revision);

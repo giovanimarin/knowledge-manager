@@ -131,6 +131,15 @@ importers:
       '@km/foundation':
         specifier: workspace:*
         version: link:../../packages/foundation
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
+      saxes:
+        specifier: 6.0.0
+        version: 6.0.0
+      unpdf:
+        specifier: 2.2.3
+        version: 2.2.3
 
   packages/foundation:
     dependencies:

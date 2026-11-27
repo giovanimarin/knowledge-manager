@@ -98,3 +98,30 @@ BEGIN
   EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON km.%I TO km_app',relation);
  END LOOP;
 END $$;
+
+CREATE TABLE km.ingest_publication_files (
+ tenant_id uuid NOT NULL, page_id uuid NOT NULL, publication_id uuid NOT NULL,
+ attachment_id uuid NOT NULL, digest text NOT NULL,
+ PRIMARY KEY(tenant_id,page_id,publication_id,attachment_id),
+ FOREIGN KEY(tenant_id,page_id,publication_id) REFERENCES km.editor_publications ON DELETE CASCADE
+);
+ALTER TABLE km.ingest_publication_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE km.ingest_publication_files FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_scope ON km.ingest_publication_files USING (tenant_id=nullif(current_setting('km.tenant_id',true),'')::uuid);
+GRANT SELECT, INSERT ON km.ingest_publication_files TO km_app;
+ALTER TABLE km.ingest_chunks ADD COLUMN attachment_id uuid;
+CREATE FUNCTION km.ingest_freeze_files() RETURNS trigger
+ LANGUAGE plpgsql SET search_path=pg_catalog,pg_temp AS $$
+BEGIN
+ INSERT INTO km.ingest_publication_files(tenant_id,page_id,publication_id,attachment_id,digest)
+  SELECT tenant_id,page_id,NEW.id,id,sha256 FROM km.wiki_attachments
+  WHERE tenant_id=NEW.tenant_id AND page_id=NEW.page_id AND scan_state='clean';
+ RETURN NEW;
+END $$;
+CREATE TRIGGER ingest_freeze_files AFTER INSERT ON km.editor_publications FOR EACH ROW EXECUTE FUNCTION km.ingest_freeze_files();
+CREATE VIEW km.ingest_clean_files WITH (security_invoker=true) AS
+ SELECT f.tenant_id,f.page_id,f.publication_id,a.id,a.filename,a.content_type,a.bytes,f.digest
+ FROM km.ingest_publication_files f JOIN km.wiki_attachments a
+ ON(a.tenant_id,a.page_id,a.id,a.sha256)=(f.tenant_id,f.page_id,f.attachment_id,f.digest)
+ WHERE a.scan_state='clean';
+GRANT SELECT ON km.ingest_clean_files TO km_app;

@@ -22,7 +22,11 @@ export async function ingest(
     return (
       await sql`select c.id,c.block_id,c.ordinal,c.start_offset,c.end_offset,c.heading,c.kind,c.content,
       g.revision,g.publication_id,g.profile from km.ingest_chunks c join km.ingest_eligible g using(tenant_id,page_id)
-      where c.page_id=${page} order by c.ordinal limit 200`.execute(store.tx)
+      where c.page_id=${page} and (c.attachment_id is null or exists (
+       select 1 from km.ingest_clean_files f where (f.tenant_id,f.page_id,f.publication_id,f.id)
+        =(c.tenant_id,c.page_id,g.publication_id,c.attachment_id))) order by c.ordinal limit 200`.execute(
+        store.tx,
+      )
     ).rows;
   }
   await store.require("content.edit", page);

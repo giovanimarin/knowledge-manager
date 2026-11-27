@@ -3,6 +3,10 @@ BEGIN;
 SELECT pg_advisory_xact_lock(71189001);
 -- The isolated lab runs rollback with the bootstrap operator; the runtime role lacks DDL.
 DROP VIEW IF EXISTS km.ingest_eligible;
+DROP VIEW IF EXISTS km.ingest_clean_files;
+DROP TRIGGER IF EXISTS ingest_freeze_files ON km.editor_publications;
+DROP FUNCTION IF EXISTS km.ingest_freeze_files();
+DROP TABLE IF EXISTS km.ingest_publication_files;
 DROP TRIGGER IF EXISTS ingest_capture ON km.editor_outbox;
 DROP FUNCTION IF EXISTS km.ingest_capture();
 DROP TABLE IF EXISTS km.ingest_sync_receipts, km.ingest_objects, km.ingest_sources;

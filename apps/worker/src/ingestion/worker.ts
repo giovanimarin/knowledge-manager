@@ -1,3 +1,4 @@
+import { extract, type Attachment } from "./extract.js";
 import { sql, type Dependencies, type TenantTransaction } from "@km/foundation";
 import { configuredEmbedding } from "./embedding.js";
 import { segments, type Block } from "./segments.js";
@@ -56,7 +57,22 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
   const blocks = current.blocks.length
     ? current.blocks
     : [{ id: job.page_id, text: current.content }];
-  const chunks = segments(current.title, blocks);
+  const files = (
+    await sql<Attachment>`select id,filename,content_type,bytes,digest from km.ingest_clean_files
+    where page_id=${job.page_id} and publication_id=${current.id} order by id limit 50`.execute(
+      tx,
+    )
+  ).rows;
+  const derived = [];
+  const attachments = new Set<string>();
+  for (const file of files) {
+    const block = await extract(file, tenant);
+    if (block) {
+      attachments.add(file.id);
+      derived.push(...segments(file.filename, [block]));
+    }
+  }
+  const chunks = [...segments(current.title, blocks), ...derived];
   await sql`delete from km.ingest_generations where tenant_id=${tenant} and page_id=${job.page_id}`.execute(
     tx,
   );
@@ -64,7 +80,7 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
     values(${tenant},${job.page_id},${current.id},${current.revision},${profile})`.execute(
     tx,
   );
-  for (const chunk of chunks) {
+  for (const [ordinal, chunk] of chunks.entries()) {
     const cached = (
       await sql`select 1 from km.ingest_vectors where profile=${profile} and digest=${chunk.digest}`.execute(
         tx,
@@ -76,10 +92,9 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
       await sql`insert into km.ingest_vectors values(${tenant},${profile},${chunk.digest},${vector}::public.vector)
         on conflict do nothing`.execute(tx);
     }
-    await sql`insert into km.ingest_chunks values(${tenant},${job.page_id},${chunk.id},${chunk.blockId},${chunk.ordinal},
-      ${chunk.start},${chunk.end},${chunk.heading}::text[],${chunk.kind},${chunk.content},${chunk.digest},${profile})`.execute(
-      tx,
-    );
+    await sql`insert into km.ingest_chunks values(${tenant},${job.page_id},${chunk.id},${chunk.blockId},${ordinal},
+      ${chunk.start},${chunk.end},${chunk.heading}::text[],${chunk.kind},${chunk.content},${chunk.digest},${profile},
+      ${attachments.has(chunk.blockId) ? chunk.blockId : null})`.execute(tx);
   }
 }
 
@@ -110,6 +125,12 @@ async function runTenant(dependencies: Dependencies, tenant: string) {
       }
       await sql`delete from km.ingest_generations g where not exists
         (select 1 from km.ingest_eligible e where (e.tenant_id,e.page_id)=(g.tenant_id,g.page_id))`.execute(
+        tx,
+      );
+      await sql`delete from km.ingest_chunks c using km.ingest_generations g
+        where (c.tenant_id,c.page_id)=(g.tenant_id,g.page_id) and c.attachment_id is not null
+        and not exists(select 1 from km.ingest_clean_files f where (f.tenant_id,f.page_id,f.publication_id,f.id)
+          =(c.tenant_id,c.page_id,g.publication_id,c.attachment_id))`.execute(
         tx,
       );
       await sql`delete from km.ingest_vectors v where not exists
