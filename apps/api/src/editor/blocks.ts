@@ -38,7 +38,7 @@ export function validateBlocks(value: unknown): Block[] {
     )
       throw invalid();
     ids.add(key);
-    size += row.text.length;
+    size += row.text.length + (ids.size > 1 ? 1 : 0);
     if (size > 50000) throw invalid();
     const result: Block = { id: key, kind, text: row.text };
     if (row.checked !== undefined) {

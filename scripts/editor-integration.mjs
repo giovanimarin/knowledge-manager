@@ -180,6 +180,9 @@ try {
     role = randomUUID();
   db(`insert into km.identity_roles(tenant_id,id,name,actions) values ('${tenant}','${role}','Editor proof',array['content.read','content.edit']);
   insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values ('${tenant}','${deny}','${role}','${actor.id}','${root}','deny')`);
+  reopened.ws.send(
+    JSON.stringify({ ...updates[1].packet, operationId: randomUUID() }),
+  );
   assert.equal(await reopened.closed, 4403);
   await request(
     "GET",
@@ -293,6 +296,39 @@ try {
     expectedRevision: restored.revision,
   });
   await request("GET", route + "/publication", undefined, adminA, 404);
+  const scheduled = await request("POST", route + "/publication", {
+    revision: review.revision,
+    expectedRevision: restored.revision,
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    reviewAt: new Date(Date.now() + 1800000).toISOString(),
+  });
+  db(
+    `update km.editor_publications set review_at=now()-interval '1 second' where id='${scheduled.id}'`,
+  );
+  execFileSync("bash", ["scripts/local.sh", "editor-maintenance"], {
+    stdio: "inherit",
+  });
+  assert.equal(
+    db(
+      `select count(*) from km.editor_outbox where publication_id='${scheduled.id}' and kind='review.due'`,
+    ),
+    "1",
+  );
+  const notices = await request("GET", "/editor/notifications");
+  assert.ok(notices.some((item) => item.kind === "review.due"));
+  db(
+    `update km.editor_publications set expires_at=now()-interval '1 second' where id='${scheduled.id}'`,
+  );
+  await request("GET", route + "/publication", undefined, adminA, 404);
+  execFileSync("bash", ["scripts/local.sh", "editor-maintenance"], {
+    stdio: "inherit",
+  });
+  assert.equal(
+    db(
+      `select count(*) from km.editor_outbox where publication_id='${scheduled.id}' and kind='withdrawn'`,
+    ),
+    "1",
+  );
   a.ws.close();
   await a.closed;
   const compose = (...args) =>

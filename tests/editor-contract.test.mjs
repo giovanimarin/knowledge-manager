@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import {
@@ -10,7 +9,7 @@ import {
 } from "../apps/api/dist/editor/blocks.js";
 
 const { Doc, applyUpdate, encodeStateAsUpdate, encodeStateVector } =
-  createRequire(new URL("../apps/api/package.json", import.meta.url))("yjs");
+  await import("../apps/api/node_modules/yjs/dist/yjs.mjs");
 const fixture = JSON.parse(
   readFileSync(new URL("../contracts/fixtures/editor.json", import.meta.url)),
 );
