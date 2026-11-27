@@ -271,6 +271,51 @@ export function Wiki({ token }: { token: string }) {
             </label>
             <button>Comentar</button>
           </form>
+          <details>
+            <summary>Mover ou duplicar documento</summary>
+            <form
+              onSubmit={(event) =>
+                submit(event, async (form) => {
+                  const operation = String(form.get("operation"));
+                  const parentId =
+                    String(form.get("parentId") ?? "").trim() || null;
+                  const result = await call<{ id: string }>(
+                    "/pages/" + current.id + "/" + operation,
+                    "POST",
+                    { spaceId: form.get("destination"), parentId },
+                  );
+                  await browse();
+                  await open(result.id);
+                })
+              }
+            >
+              <label>
+                Operação{" "}
+                <select name="operation">
+                  <option value="move">Mover</option>
+                  <option value="duplicate">Duplicar</option>
+                </select>
+              </label>
+              <label>
+                Espaço de destino{" "}
+                <select
+                  name="destination"
+                  required
+                  defaultValue={current.space_id ?? ""}
+                >
+                  {spaces.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                ID do documento pai <input name="parentId" />
+              </label>
+              <button>Aplicar alteração</button>
+            </form>
+          </details>
           <h4>Anexos</h4>
           <ul>
             {attachments.map((file) => (
@@ -281,9 +326,71 @@ export function Wiki({ token }: { token: string }) {
                   : file.scan_state === "clean"
                     ? "Verificado"
                     : "Rejeitado"}
+                {file.scan_state === "clean" && (
+                  <button
+                    onClick={() =>
+                      attempt(async () => {
+                        const result = await call<{
+                          filename: string;
+                          data: string;
+                        }>("/pages/" + current.id + "/attachments/" + file.id);
+                        const bytes = Uint8Array.from(
+                          atob(result.data),
+                          (char) => char.charCodeAt(0),
+                        );
+                        const url = URL.createObjectURL(
+                          new Blob([bytes], {
+                            type: "application/octet-stream",
+                          }),
+                        );
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = result.filename;
+                        link.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      })
+                    }
+                  >
+                    Baixar
+                  </button>
+                )}
               </li>
             ))}
           </ul>
+          <form
+            onSubmit={(event) =>
+              submit(event, async (form) => {
+                const files = form.getAll("files");
+                for (const file of files) {
+                  if (
+                    typeof file === "string" ||
+                    file.size === 0 ||
+                    file.size > 60000
+                  )
+                    throw new Error("Selecione arquivos de até 60 kB cada.");
+                  const bytes = new Uint8Array(await file.arrayBuffer());
+                  const data = btoa(
+                    Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
+                      "",
+                    ),
+                  );
+                  const result = await call<{ scanState: string }>(
+                    "/pages/" + current.id + "/attachments",
+                    "POST",
+                    { filename: file.name, contentType: file.type, data },
+                  );
+                  if (result.scanState === "rejected")
+                    throw new Error("Anexo rejeitado pelo scanner.");
+                }
+                await open(current.id);
+              })
+            }
+          >
+            <label>
+              Arquivos <input name="files" type="file" multiple required />
+            </label>
+            <button>Enviar anexos</button>
+          </form>
           <h4>Relações</h4>
           <ul>
             {relations.map((relation) => (
