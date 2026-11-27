@@ -1,0 +1,209 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+
+const [, , identityFile] = process.argv;
+const { tenant, adminA, adminB, adminMemberA } = JSON.parse(
+  readFileSync(identityFile, "utf8"),
+);
+const fixtures = JSON.parse(
+  readFileSync(new URL("../contracts/fixtures/wiki.json", import.meta.url)),
+);
+const db = (query) =>
+  execFileSync(
+    "docker",
+    [
+      "compose",
+      "--env-file",
+      process.env.KM_ENV_FILE,
+      "exec",
+      "-T",
+      "db",
+      "psql",
+      "-XAtq",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "km_bootstrap",
+      "-d",
+      "km",
+      "-c",
+      query,
+    ],
+    { encoding: "utf8" },
+  ).trim();
+async function request(method, path, body, token = adminA, expected = 200) {
+  const response = await fetch(
+    new URL("/v1/wiki" + path, process.env.KM_BASE_URL),
+    {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(12000),
+    },
+  );
+  assert.equal(response.status, expected, method + " " + path);
+  const result = await response.json();
+  if (expected >= 400) {
+    assert.deepEqual(Object.keys(result).sort(), [
+      "correlationId",
+      "status",
+      "title",
+      "type",
+    ]);
+    assert.equal(result.status, expected);
+  }
+  return result;
+}
+
+await request("GET", "/spaces", undefined, null, 401);
+await request("POST", "/spaces", fixtures.space, adminA, 404);
+const role = randomUUID();
+const grant = randomUUID();
+db(`insert into km.identity_roles(tenant_id,id,name,actions) values ('${tenant}','${role}','Wiki fixture',array['content.read','content.edit','content.comment','content.acl.manage']);
+insert into km.identity_grants(tenant_id,id,role_id,member_id,effect) values ('${tenant}','${grant}','${role}','${adminMemberA}','allow')`);
+
+const space = await request("POST", "/spaces", fixtures.space);
+const other = await request("POST", "/spaces", { title: "Pesquisa" });
+const root = await request("POST", "/pages", {
+  ...fixtures.page,
+  spaceId: space.id,
+});
+const child = await request("POST", "/pages", {
+  ...fixtures.child,
+  spaceId: space.id,
+  parentId: root.id,
+});
+await request("GET", "/pages/" + root.id, undefined, adminB, 404);
+assert.deepEqual(
+  await request("GET", "/pages?q=Checklist", undefined, adminB),
+  [],
+);
+assert.equal(
+  (await request("GET", "/pages?q=Checklist&tag=seguran%C3%A7a"))[0].id,
+  root.id,
+);
+await request(
+  "PATCH",
+  "/pages/" + root.id,
+  { revision: 2, title: "Desatualizado" },
+  adminA,
+  409,
+);
+await request("PATCH", "/pages/" + root.id, {
+  revision: 1,
+  metadata: { unit: "suporte" },
+});
+assert.equal(
+  (await request("GET", "/pages/" + root.id)).metadata.unit,
+  "suporte",
+);
+await request(
+  "POST",
+  "/pages/" + root.id + "/move",
+  { spaceId: space.id, parentId: child.id },
+  adminA,
+  409,
+);
+const copied = await request("POST", "/pages/" + root.id + "/duplicate", {
+  spaceId: other.id,
+});
+assert.equal(
+  (await request("GET", "/pages?spaceId=" + other.id)).filter(
+    (row) => row.parent_id === copied.id,
+  ).length,
+  1,
+);
+await request("POST", "/pages/" + child.id + "/move", { spaceId: other.id });
+assert.equal((await request("GET", "/pages/" + child.id)).space_id, other.id);
+await request("POST", "/pages/" + root.id + "/relations", {
+  targetId: child.id,
+  ...fixtures.relation,
+});
+assert.equal(
+  (await request("GET", "/pages/" + child.id + "/relations"))[0].source_id,
+  root.id,
+);
+const comment = await request(
+  "POST",
+  "/pages/" + root.id + "/comments",
+  fixtures.comment,
+);
+await request("POST", "/pages/" + root.id + "/comments", {
+  ...fixtures.comment,
+  rootId: comment.id,
+});
+await request("PATCH", "/pages/" + root.id + "/comments/" + comment.id, {
+  resolved: true,
+});
+assert.equal(
+  (await request("GET", "/pages/" + root.id + "/comments")).find(
+    (row) => row.id === comment.id,
+  ).history.length,
+  1,
+);
+await request("GET", "/pages/" + root.id + "/comments", undefined, adminB, 404);
+const attachment = await request("POST", "/pages/" + root.id + "/attachments", {
+  filename: "sample.txt",
+  contentType: "text/plain",
+  data: "dGVzdGUK",
+});
+assert.equal(attachment.scanState, "pending");
+await request(
+  "GET",
+  "/pages/" + root.id + "/attachments/" + attachment.id,
+  undefined,
+  adminA,
+  404,
+);
+const template = await request("POST", "/templates", {
+  spaceId: space.id,
+  title: "Checklist",
+  content: "Versão inicial",
+});
+const created = await request("POST", "/pages", {
+  spaceId: space.id,
+  title: "Do template",
+  templateId: template.id,
+});
+await request("POST", "/templates/" + template.id, {
+  title: "Checklist",
+  content: "Versão seguinte",
+});
+assert.equal(
+  (await request("GET", "/pages/" + created.id)).content,
+  "Versão inicial",
+);
+await request("DELETE", "/pages/" + child.id);
+assert.equal(
+  (await request("GET", "/pages/" + root.id + "/relations"))[0].broken,
+  true,
+);
+await request("POST", "/pages/" + child.id + "/restore", {});
+await request("DELETE", "/spaces/" + space.id);
+await request("GET", "/pages/" + root.id, undefined, adminA, 404);
+await request("POST", "/spaces/" + space.id + "/restore", {});
+assert.equal(
+  (await request("GET", "/pages/" + root.id + "/attachments")).length,
+  1,
+);
+const deny = randomUUID();
+db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
+ ('${tenant}','${deny}','${role}','${adminMemberA}','${root.id}','deny')`);
+await request("GET", "/pages/" + root.id, undefined, adminA, 404);
+assert.deepEqual(
+  await request("GET", "/pages?q=Access%20checklist&spaceId=" + space.id),
+  [],
+);
+assert.deepEqual(await request("GET", "/pages/" + child.id + "/relations"), []);
+assert.equal(db("set role km_app; select count(*) from km.wiki_pages"), "0");
+db(
+  `delete from km.identity_grants where tenant_id='${tenant}' and id='${deny}'`,
+);
+console.log(
+  "Wiki G1/G2: árvore, ACL ativa, busca, comentários, anexos em quarentena, templates e restauração",
+);

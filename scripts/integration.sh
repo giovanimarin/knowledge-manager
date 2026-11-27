@@ -43,6 +43,7 @@ make setup
 echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
 node scripts/identity-integration.mjs primary "$scratch/identity"
+node scripts/wiki-integration.mjs "$scratch/identity"
 compose up -d --wait --no-build --scale api=2 --scale worker=2
 for index in 1 2; do
   compose exec -T --index "$index" api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r=>{if(!r.ok) process.exit(1)})'
@@ -91,6 +92,7 @@ db -f /km-infra/v2-down.sql
 make setup
 [[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=2")" == 1 ]]
 [[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=3")" == 1 ]]
+[[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=4")" == 1 ]]
 echo "Upgrade e rollback v2 verificados preservando os fixtures do PKG-01"
 compose stop web worker api
 db -f /km-infra/rollback.sql

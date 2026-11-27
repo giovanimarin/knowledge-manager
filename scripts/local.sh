@@ -35,11 +35,12 @@ JS
 }
 
 migrate() {
-  local checksum identity_checksum worker_checksum
+  local checksum identity_checksum worker_checksum wiki_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
   identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
   worker_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v3-up.sql")).digest("hex"))')"
-  db -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
+  wiki_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v4-up.sql")).digest("hex"))')"
+  db -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {

@@ -1,0 +1,623 @@
+import { createHash, randomUUID } from "node:crypto";
+import { sql, type TenantTransaction } from "@km/foundation";
+import { assess, localMember, type Action } from "../identity/policy.js";
+import { id, input, string, IdentityError } from "../identity/security.js";
+import { audit, changeEpoch, type Actor } from "../identity/sessions.js";
+
+type Body = Record<string, unknown>;
+type Page = {
+  id: string;
+  space_id: string;
+  parent_id: string | null;
+  title: string;
+  content: string;
+  tags: string[];
+  category: string | null;
+  metadata: Body;
+  revision: number;
+  owner_id: string | null;
+  deleted_batch: string | null;
+  author_id: string | null;
+  classification: string;
+  updated_at: Date;
+};
+
+const missing = () => new IdentityError(404);
+const invalid = () => new IdentityError(400);
+const optionalId = (value: unknown) => (value == null ? null : id(value));
+const document = (value: unknown) =>
+  value === "" || value === undefined ? "" : string(value, 50000);
+const classification = (value: unknown) => {
+  const result = value === undefined ? "internal" : string(value);
+  if (!["public", "internal", "confidential", "restricted"].includes(result))
+    throw invalid();
+  return result;
+};
+function tags(value: unknown) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 40) throw invalid();
+  return [...new Set(value.map((tag: unknown) => string(tag, 64)))];
+}
+
+export class Wiki {
+  constructor(
+    private readonly tx: TenantTransaction,
+    private readonly tenant: string,
+    private readonly actor: Actor,
+  ) {}
+
+  private can(action: Action, resource: string | null) {
+    return assess(this.tx, this.tenant, this.actor, {
+      action,
+      resource,
+      channel: "web",
+      purpose: "default",
+      external: false,
+    });
+  }
+  private async require(action: Action, resource: string | null) {
+    if (!(await this.can(action, resource))) throw missing();
+  }
+  private get member() {
+    return this.actor.kind === "member" ? this.actor.member.id : null;
+  }
+  private event(event: string, resource: string) {
+    return audit(
+      this.tx,
+      this.tenant,
+      this.member,
+      "wiki." + event,
+      "success",
+      resource,
+    );
+  }
+  private async resource(key: string, parent: string | null, level: string) {
+    await sql`insert into km.identity_resources (tenant_id,id,parent_id,classification)
+      values (${this.tenant},${key},${parent},${level})`.execute(this.tx);
+  }
+  private async page(
+    key: string,
+    action: Action = "content.read",
+    deleted = false,
+  ) {
+    await this.require(action, key);
+    const row = (
+      await sql<Page>`select p.*,r.classification from km.wiki_pages p
+      join km.identity_resources r using (tenant_id,id)
+      where id=${key} and (deleted_batch is null or ${deleted})`.execute(
+        this.tx,
+      )
+    ).rows[0];
+    if (!row) throw missing();
+    return row;
+  }
+  private async space(key: string, action: Action) {
+    await this.require(action, key);
+    const row = (
+      await sql<{
+        id: string;
+      }>`select id from km.wiki_spaces where id=${key} and deleted_batch is null`.execute(
+        this.tx,
+      )
+    ).rows[0];
+    if (!row) throw missing();
+  }
+  private async destination(space: string, parent: string | null) {
+    await this.space(space, "content.edit");
+    if (parent && (await this.page(parent, "content.edit")).space_id !== space)
+      throw invalid();
+  }
+  private async subtree(root: string) {
+    return (
+      await sql<{ id: string; parent_id: string | null; depth: number }>`
+      with recursive tree(id,parent_id,depth) as (
+        select id,parent_id,0 from km.wiki_pages where id=${root} and deleted_batch is null
+        union all select p.id,p.parent_id,t.depth+1 from km.wiki_pages p join tree t on t.id=p.parent_id
+        where p.deleted_batch is null
+      ) select * from tree order by depth limit 101
+    `.execute(this.tx)
+    ).rows;
+  }
+  private async createPage(body: Body) {
+    const space = id(body.spaceId);
+    const parent = optionalId(body.parentId);
+    await this.destination(space, parent);
+    const key = randomUUID();
+    const level = classification(body.classification);
+    let content = document(body.content);
+    let metadata = body.metadata === undefined ? {} : input(body.metadata);
+    if (body.templateId !== undefined) {
+      const template = (await this.templates(id(body.templateId))).find(
+        (t) =>
+          body.templateRevision === undefined ||
+          t.revision === body.templateRevision,
+      );
+      if (!template || (template.space_id && template.space_id !== space))
+        throw missing();
+      content = body.content === undefined ? template.content : content;
+      metadata = { ...template.fields, ...metadata };
+    }
+    await this.resource(key, parent ?? space, level);
+    await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,title,content,tags,category,metadata,owner_id,author_id)
+      values (${this.tenant},${key},${space},${parent},${string(body.title)},${content},
+      ${tags(body.tags)}::text[],${body.category == null ? null : string(body.category)},${JSON.stringify(metadata)}::jsonb,${optionalId(body.ownerId)},${this.member})`.execute(
+      this.tx,
+    );
+    await this.event("page.create", key);
+    return { id: key, revision: 1 };
+  }
+  private async list(query: URLSearchParams) {
+    const term = query.get("q");
+    if (term && term.length > 120) throw invalid();
+    const space = optionalId(query.get("spaceId"));
+    const author = optionalId(query.get("authorId"));
+    const tag = query.get("tag");
+    const since = query.get("since");
+    const until = query.get("until");
+    for (const date of [since, until])
+      if (date && !Number.isFinite(Date.parse(date))) throw invalid();
+    const rows = (
+      await sql<Page>`select p.*,r.classification from km.wiki_pages p join km.identity_resources r using (tenant_id,id)
+      where p.deleted_batch is null and (${space}::uuid is null or p.space_id=${space})
+      and (${author}::uuid is null or p.author_id=${author})
+      and (${tag}::text is null or ${tag}=any(p.tags))
+      and (${since}::timestamptz is null or updated_at>=${since}::timestamptz)
+      and (${until}::timestamptz is null or updated_at<=${until}::timestamptz)
+      and (${term}::text is null or strpos(lower(title || ' ' || content),lower(${term}::text))>0)
+      order by case when ${query.get("sort")}::text='relevance' then strpos(lower(title),lower(coalesce(${term}::text,'')))>0 end desc nulls last,
+      updated_at desc,id desc`.execute(this.tx)
+    ).rows;
+    const visible = [];
+    for (const row of rows) {
+      if (!(await this.can("content.read", row.id))) continue;
+      const { content, ...summary } = await this.visiblePage(row);
+      const position = term
+        ? content.toLowerCase().indexOf(term.toLowerCase())
+        : -1;
+      visible.push({
+        ...summary,
+        snippet:
+          position < 0
+            ? null
+            : content.slice(Math.max(0, position - 30), position + 120),
+      });
+      if (visible.length >= 100) break;
+    }
+    return visible;
+  }
+  private async moveOrDuplicate(root: Page, body: Body, duplicate: boolean) {
+    const space = id(body.spaceId);
+    const parent = optionalId(body.parentId);
+    await this.destination(space, parent);
+    const tree = await this.subtree(root.id);
+    if (
+      tree.length > 100 ||
+      (!duplicate && tree.some((node) => node.id === parent))
+    )
+      throw new IdentityError(409);
+    for (const node of tree) {
+      await this.require("content.read", node.id);
+      // Reparenting changes inherited grants, so require ACL authority on every affected node.
+      await this.require("content.acl.manage", node.id);
+    }
+    await this.require("content.acl.manage", parent ?? space);
+    if (!duplicate) {
+      await sql`update km.wiki_pages set space_id=${space} where id=any(${tree.map((node) => node.id)}::uuid[])`.execute(
+        this.tx,
+      );
+      await sql`update km.wiki_pages set parent_id=${parent},revision=revision+1,updated_at=now() where id=${root.id}`.execute(
+        this.tx,
+      );
+      await sql`update km.identity_resources set parent_id=${parent ?? space} where id=${root.id}`.execute(
+        this.tx,
+      );
+      await changeEpoch(this.tx, this.tenant);
+      return { id: root.id };
+    }
+    const copies = new Map(tree.map((node) => [node.id, randomUUID()]));
+    for (const node of tree) {
+      const key = copies.get(node.id)!;
+      const destination =
+        node.id === root.id ? parent : copies.get(node.parent_id!)!;
+      const source = await this.page(node.id);
+      await this.resource(key, destination ?? space, source.classification);
+      await sql`insert into km.wiki_pages(tenant_id,id,space_id,parent_id,title,content,tags,category,metadata,owner_id,author_id)
+        select tenant_id,${key},${space},${destination},title,content,tags,category,metadata,owner_id,${this.member}
+        from km.wiki_pages where id=${node.id}`.execute(this.tx);
+    }
+    return { id: copies.get(root.id) };
+  }
+  private async visiblePage(page: Page) {
+    return {
+      ...page,
+      parent_id:
+        page.parent_id && (await this.can("content.read", page.parent_id))
+          ? page.parent_id
+          : null,
+      space_id: (await this.can("content.read", page.space_id))
+        ? page.space_id
+        : null,
+    };
+  }
+
+  private async spaceLifecycle(key: string, restore: boolean) {
+    await this.require("content.acl.manage", key);
+    const row = (
+      await sql<{ deleted_batch: string | null }>`
+      select deleted_batch from km.wiki_spaces where id=${key}
+      and (${restore} = (deleted_batch is not null))
+      and (not ${restore} or deleted_at>now()-interval '30 days')
+    `.execute(this.tx)
+    ).rows[0];
+    if (!row) throw missing();
+    const children = (
+      await sql<{
+        id: string;
+      }>`select id from km.wiki_pages where space_id=${key}
+      and (case when ${restore} then deleted_batch=${key} else deleted_batch is null end)`.execute(
+        this.tx,
+      )
+    ).rows;
+    for (const child of children)
+      await this.require("content.acl.manage", child.id);
+    await sql`update km.wiki_pages set deleted_batch=case when ${restore} then null else ${key}::uuid end,
+      deleted_at=case when ${restore} then null else now() end where id=any(${children.map((c) => c.id)}::uuid[])`.execute(
+      this.tx,
+    );
+    await sql`update km.wiki_spaces set deleted_batch=case when ${restore} then null else id end,
+      deleted_at=case when ${restore} then null else now() end where id=${key}`.execute(
+      this.tx,
+    );
+    await changeEpoch(this.tx, this.tenant);
+    await this.event(restore ? "space.restore" : "space.trash", key);
+    return { id: key };
+  }
+
+  private async templates(key?: string) {
+    const rows = (
+      await sql<{
+        id: string;
+        space_id: string | null;
+        revision: number;
+        title: string;
+        content: string;
+        fields: Body;
+      }>`
+      select id,space_id,revision,title,content,fields from km.wiki_templates
+      where (${key ?? null}::uuid is null or id=${key ?? null}) order by revision desc,id
+    `.execute(this.tx)
+    ).rows;
+    const visible = [];
+    for (const row of rows)
+      if (await this.can("content.read", row.space_id)) visible.push(row);
+    return visible;
+  }
+
+  async dispatch(
+    method: string,
+    path: string,
+    body: Body,
+    query: URLSearchParams,
+  ): Promise<unknown> {
+    if (method !== "GET") {
+      await sql`select pg_advisory_xact_lock(71189004,hashtext(${this.tenant}))`.execute(
+        this.tx,
+      );
+    }
+    if (path === "/v1/wiki/spaces") {
+      if (method === "GET") {
+        const result = [];
+        const rows = (
+          await sql<{
+            id: string;
+            title: string;
+          }>`select id,title,metadata_schema from km.wiki_spaces where deleted_batch is null order by title,id`.execute(
+            this.tx,
+          )
+        ).rows;
+        for (const row of rows)
+          if (await this.can("content.read", row.id)) result.push(row);
+        return result;
+      }
+      if (method === "POST") {
+        await this.require("content.edit", null);
+        const key = randomUUID();
+        await this.resource(key, null, classification(body.classification));
+        await sql`insert into km.wiki_spaces(tenant_id,id,title,metadata_schema) values
+          (${this.tenant},${key},${string(body.title)},${JSON.stringify(body.metadataSchema === undefined ? {} : input(body.metadataSchema))}::jsonb)`.execute(
+          this.tx,
+        );
+        await this.event("space.create", key);
+        return { id: key };
+      }
+    }
+    const spaceOperation = /^\/v1\/wiki\/spaces\/([^/]+)(\/restore)?$/.exec(
+      path,
+    );
+    if (spaceOperation) {
+      if (method === "DELETE" && !spaceOperation[2])
+        return this.spaceLifecycle(id(spaceOperation[1]), false);
+      if (method === "POST" && spaceOperation[2])
+        return this.spaceLifecycle(id(spaceOperation[1]), true);
+    }
+    if (path === "/v1/wiki/pages" && method === "GET") return this.list(query);
+    if (path === "/v1/wiki/pages" && method === "POST")
+      return this.createPage(body);
+    const template = /^\/v1\/wiki\/templates(?:\/([^/]+))?$/.exec(path);
+    if (template) {
+      const key = template[1] ? id(template[1]) : undefined;
+      if (method === "GET") return this.templates(key);
+      if (method === "POST") {
+        const prior = key ? (await this.templates(key))[0] : undefined;
+        if (key && !prior) throw missing();
+        const space = prior ? prior.space_id : optionalId(body.spaceId);
+        if (space) await this.space(space, "content.edit");
+        else await this.require("content.edit", null);
+        const revision = (prior?.revision ?? 0) + 1;
+        const templateId = key ?? randomUUID();
+        await sql`insert into km.wiki_templates values
+          (${this.tenant},${templateId},${revision},${space},${string(body.title)},${document(body.content)},
+          ${JSON.stringify(body.fields === undefined ? {} : input(body.fields))}::jsonb)`.execute(
+          this.tx,
+        );
+        return { id: templateId, revision };
+      }
+    }
+    const match =
+      /^\/v1\/wiki\/pages\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/.exec(path);
+    if (!match) throw missing();
+    const key = id(match[1]);
+    const [section, leaf] = [match[2], match[3]];
+    if (section === "restore" && method === "POST") return this.restore(key);
+    const page = await this.page(key);
+    if (!section && method === "GET") {
+      await this.event("page.read", key);
+      return this.visiblePage(page);
+    }
+    if (!section && method === "PATCH") {
+      await this.require("content.edit", key);
+      if (body.revision !== page.revision) throw new IdentityError(409);
+      if (body.classification !== undefined) {
+        await this.require("content.acl.manage", key);
+        await sql`update km.identity_resources set classification=${classification(body.classification)} where id=${key}`.execute(
+          this.tx,
+        );
+        await changeEpoch(this.tx, this.tenant);
+      }
+      await sql`update km.wiki_pages set title=${body.title === undefined ? page.title : string(body.title)},
+        content=${body.content === undefined ? page.content : document(body.content)},
+        tags=${body.tags === undefined ? page.tags : tags(body.tags)}::text[],
+        category=${body.category === undefined ? page.category : body.category === null ? null : string(body.category)},
+        metadata=${JSON.stringify(body.metadata === undefined ? page.metadata : input(body.metadata))}::jsonb,
+        owner_id=${body.ownerId === undefined ? page.owner_id : optionalId(body.ownerId)},
+        revision=revision+1,updated_at=now() where id=${key}`.execute(this.tx);
+      await this.event("page.update", key);
+      return { id: key, revision: page.revision + 1 };
+    }
+    if (!section && method === "DELETE") return this.trash(key);
+    if ((section === "move" || section === "duplicate") && method === "POST") {
+      const result = await this.moveOrDuplicate(
+        page,
+        body,
+        section === "duplicate",
+      );
+      await this.event("page." + section, key);
+      return result;
+    }
+    if (section === "relations") return this.relations(key, method, body, leaf);
+    if (section === "comments") return this.comments(key, method, body, leaf);
+    if (section === "attachments")
+      return this.attachments(key, method, body, leaf);
+    throw missing();
+  }
+
+  private async trash(key: string) {
+    const tree = await this.subtree(key);
+    if (tree.length > 100) throw new IdentityError(409);
+    for (const item of tree) await this.require("content.acl.manage", item.id);
+    await sql`update km.wiki_pages set deleted_batch=${key},deleted_at=now()
+      where id=any(${tree.map((node) => node.id)}::uuid[])`.execute(this.tx);
+    await changeEpoch(this.tx, this.tenant);
+    await this.event("page.trash", key);
+    return { id: key };
+  }
+  private async restore(key: string) {
+    const root = await this.page(key, "content.acl.manage", true);
+    if (root.deleted_batch !== key) throw missing();
+    await this.space(root.space_id, "content.edit");
+    if (root.parent_id) await this.page(root.parent_id, "content.edit");
+    const batch = (
+      await sql<{
+        id: string;
+      }>`select id from km.wiki_pages where deleted_batch=${key}
+      and deleted_at>now()-interval '30 days'`.execute(this.tx)
+    ).rows;
+    if (!batch.length) throw missing();
+    for (const item of batch) await this.require("content.acl.manage", item.id);
+    await sql`update km.wiki_pages set deleted_batch=null,deleted_at=null where deleted_batch=${key}`.execute(
+      this.tx,
+    );
+    await changeEpoch(this.tx, this.tenant);
+    await this.event("page.restore", key);
+    return { id: key };
+  }
+  private async relations(
+    key: string,
+    method: string,
+    body: Body,
+    leaf?: string,
+  ) {
+    if (method === "GET") {
+      const rows = (
+        await sql<{
+          id: string;
+          source_id: string;
+          target_id: string;
+          kind: string;
+          broken: boolean;
+        }>`
+        select r.id,r.source_id,r.target_id,r.kind, other.deleted_batch is not null as broken
+        from km.wiki_relations r join km.wiki_pages other on other.tenant_id=r.tenant_id
+        and other.id=case when r.source_id=${key} then r.target_id else r.source_id end
+        where r.source_id=${key} or r.target_id=${key}`.execute(this.tx)
+      ).rows;
+      const result = [];
+      for (const row of rows)
+        if (
+          await this.can(
+            "content.read",
+            row.source_id === key ? row.target_id : row.source_id,
+          )
+        )
+          result.push(row);
+      return result;
+    }
+    await this.require("content.edit", key);
+    if (method === "POST") {
+      const target = await this.page(id(body.targetId));
+      const kind = string(body.type);
+      if (
+        !["dependency", "complement", "replacement", "reference"].includes(
+          kind,
+        ) ||
+        target.id === key
+      )
+        throw invalid();
+      const relation = randomUUID();
+      await sql`insert into km.wiki_relations values (${this.tenant},${relation},${key},${target.id},${kind})`.execute(
+        this.tx,
+      );
+      await this.event("relation.create", key);
+      return { id: relation };
+    }
+    if (method === "DELETE" && leaf) {
+      const row =
+        await sql`delete from km.wiki_relations where id=${id(leaf)} and source_id=${key} returning id`.execute(
+          this.tx,
+        );
+      if (!row.rows.length) throw missing();
+      return { id: leaf };
+    }
+    throw missing();
+  }
+  private async comments(
+    key: string,
+    method: string,
+    body: Body,
+    leaf?: string,
+  ) {
+    if (method === "GET")
+      return (
+        await sql`select id,root_id,actor_id,anchor,body,resolved,history,created_at
+      from km.wiki_comments where page_id=${key} order by created_at,id`.execute(
+          this.tx,
+        )
+      ).rows;
+    await this.require("content.comment", key);
+    const member = localMember(this.actor).id;
+    if (method === "POST") {
+      const comment = randomUUID();
+      const root = optionalId(body.rootId);
+      if (
+        root &&
+        !(
+          await sql`select id from km.wiki_comments where page_id=${key} and id=${root} and root_id is null`.execute(
+            this.tx,
+          )
+        ).rows.length
+      )
+        throw missing();
+      await sql`insert into km.wiki_comments(tenant_id,page_id,id,root_id,actor_id,anchor,body)
+        values (${this.tenant},${key},${comment},${root},${member},${optionalId(body.anchor)},${string(body.text, 4000)})`.execute(
+        this.tx,
+      );
+      await this.event("comment.create", key);
+      return { id: comment };
+    }
+    if (method === "PATCH" && leaf) {
+      const resolved = body.resolved;
+      if (typeof resolved !== "boolean") throw invalid();
+      const changed =
+        await sql`update km.wiki_comments set resolved=${resolved},
+        history=history||jsonb_build_array(jsonb_build_object('resolved',${resolved}::boolean,'actor',${member}::text,'at',now()))
+        where page_id=${key} and id=${id(leaf)} and actor_id=${member} and root_id is null returning id`.execute(
+          this.tx,
+        );
+      if (!changed.rows.length) throw missing();
+      return { id: leaf, resolved };
+    }
+    throw missing();
+  }
+  private async attachments(
+    key: string,
+    method: string,
+    body: Body,
+    leaf?: string,
+  ) {
+    if (method === "GET" && !leaf)
+      return (
+        await sql`select id,filename,content_type,sha256,scan_state,octet_length(bytes) as size
+      from km.wiki_attachments where page_id=${key} order by filename,id`.execute(
+          this.tx,
+        )
+      ).rows;
+    if (method === "GET" && leaf) {
+      const result = await sql<{
+        bytes: Buffer;
+        filename: string;
+        content_type: string;
+      }>`select bytes,filename,content_type
+        from km.wiki_attachments where page_id=${key} and id=${id(leaf)} and scan_state='clean'`.execute(
+        this.tx,
+      );
+      const file = result.rows[0];
+      if (!file) throw missing();
+      return {
+        filename: file.filename,
+        contentType: file.content_type,
+        data: file.bytes.toString("base64"),
+      };
+    }
+    await this.require("content.edit", key);
+    if (method === "POST") {
+      const filename = string(body.filename, 180);
+      const type = string(body.contentType, 100);
+      const encoded = string(body.data, 80000);
+      const bytes = Buffer.from(encoded, "base64");
+      if (
+        !bytes.length ||
+        bytes.toString("base64") !== encoded ||
+        /[\\/]/.test(filename) ||
+        [...filename].some((char) => char.charCodeAt(0) < 32)
+      )
+        throw invalid();
+      const loaded = (
+        await sql<{
+          total: number;
+        }>`select coalesce(sum(octet_length(bytes)),0)::int total from km.wiki_attachments`.execute(
+          this.tx,
+        )
+      ).rows[0]!.total;
+      if (loaded + bytes.length > 10 * 1024 * 1024)
+        throw new IdentityError(429);
+      const upload = randomUUID();
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      await sql`insert into km.wiki_attachments(tenant_id,page_id,id,filename,content_type,bytes,sha256)
+        values (${this.tenant},${key},${upload},${filename},${type},${bytes},${hash})`.execute(
+        this.tx,
+      );
+      await this.event("attachment.stage", key);
+      return { id: upload, sha256: hash, scanState: "pending" };
+    }
+    if (method === "DELETE" && leaf) {
+      const deleted =
+        await sql`delete from km.wiki_attachments where page_id=${key} and id=${id(leaf)} returning id`.execute(
+          this.tx,
+        );
+      if (!deleted.rows.length) throw missing();
+      await this.event("attachment.delete", key);
+      return { id: leaf };
+    }
+    throw missing();
+  }
+}

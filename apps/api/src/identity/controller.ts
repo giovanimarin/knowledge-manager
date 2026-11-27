@@ -20,6 +20,7 @@ import {
   parseToken,
 } from "./security.js";
 import { audit, changeEpoch, Sessions } from "./sessions.js";
+import { Wiki } from "../wiki/wiki.js";
 import { Management } from "./management.js";
 
 @Controller("v1")
@@ -121,6 +122,15 @@ export class IdentityController {
       );
     }
     return this.sessions.withActor(auth, async (tx, tenant, actor) => {
+      if (pathname.startsWith("/v1/wiki/")) {
+        const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+        return new Wiki(tx, tenant, actor).dispatch(
+          req.method ?? "",
+          pathname,
+          body,
+          query,
+        );
+      }
       if (key === "GET /v1/me") {
         if (actor.kind === "service")
           return {
