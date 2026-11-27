@@ -41,10 +41,11 @@ export async function pushSnapshot({
     const expectedState = mapped ? "draft" : "quarantine";
     if (previous?.version === file.version && previous.state === expectedState)
       continue;
-    const title = (file.remoteKey.split("/").at(-1) || file.remoteKey).slice(
-      0,
-      160,
-    );
+    const title = (
+      file.title ||
+      file.remoteKey.split("/").at(-1) ||
+      file.remoteKey
+    ).slice(0, 160);
     const content = mapped ? await snapshot.read(file) : "";
     if (content.length > 50000)
       throw new Error("Source content exceeds bounds");
