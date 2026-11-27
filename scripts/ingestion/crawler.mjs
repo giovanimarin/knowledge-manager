@@ -31,7 +31,8 @@ function robotRules(source) {
           universal = false;
           options = false;
         }
-        universal ||= value === "*";
+        universal ||=
+          value === "*" || value.toLowerCase() === "knowledgemanager-crawler";
         break;
       case "disallow":
       case "allow":

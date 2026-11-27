@@ -49,7 +49,7 @@ echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
 node scripts/identity-integration.mjs primary "$scratch/identity"
 KM_WIKI_G3_REPORT="$artifacts/wiki-g3.json" node scripts/wiki-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
-KM_EDITOR_G3_REPORT="$artifacts/editor-g3.json" node scripts/editor-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
+KM_EDITOR_G3_REPORT="$artifacts/editor-g3.json" KM_INGEST_G3_REPORT="$artifacts/ingestion-g3.json" node scripts/editor-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
 compose up -d --wait --no-build --scale api=2 --scale worker=2
 for index in 1 2; do
   compose exec -T --index "$index" api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r=>{if(!r.ok) process.exit(1)})'

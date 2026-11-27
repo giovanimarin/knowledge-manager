@@ -401,6 +401,7 @@ try {
     ).toString("base64"),
   });
   assert.equal(scanImage.scanState, "clean");
+  const ingestionStarted = performance.now();
   const published = await request("POST", route + "/publication", {
     revision: review.revision,
     expectedRevision: restored.revision,
@@ -477,6 +478,7 @@ try {
     data: Buffer.from("LATE ATTACHMENT").toString("base64"),
   });
   assert.equal(later.scanState, "clean");
+  const ingestionRecoveredMs = Math.round(performance.now() - ingestionStarted);
   const initialIds = chunks.map((row) => row.id);
   const jobs = await Promise.all(
     Array.from({ length: 4 }, () =>
@@ -530,6 +532,28 @@ try {
       ) === "0",
     "withdrawn generation not removed",
   );
+  const ingestionReport = {
+    recoveredMs: ingestionRecoveredMs,
+    chunks: chunks.length,
+    concurrentRequests: jobs.length,
+    checks: [
+      "retry",
+      "restart",
+      "publication",
+      "tenant-denial",
+      "attachment-integrity",
+      "ocr",
+      "deduplication",
+      "withdrawal",
+      "source-cursor",
+    ],
+  };
+  if (process.env.KM_INGEST_G3_REPORT)
+    writeFileSync(
+      process.env.KM_INGEST_G3_REPORT,
+      JSON.stringify(ingestionReport, null, 2) + "\n",
+    );
+  console.log("Ingestão métricas " + JSON.stringify(ingestionReport));
   console.log(
     "Ingestão G3: publicação, rollback/retry, reprocessamento concorrente, ACL e retirada",
   );
