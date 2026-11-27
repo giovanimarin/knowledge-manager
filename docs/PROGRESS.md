@@ -1,6 +1,6 @@
 # Acompanhamento do projeto
 
-Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 2/18 pacotes aceitos. PKG-01 e PKG-02 concluídos; PKG-03 é o próximo pacote.
+Baseline: PR #4 integrado em 63a0a98d; PKG-01 integrado via PR #5 em f6fcf69715ebf26a81d4e51961c0c28aecb639e4. Escopo integral mantido. Definição funcional 60/60; especificação baseline aceita; implementação 3/18 pacotes aceitos. PKG-01, PKG-02 e PKG-03 concluídos; PKG-04 é o próximo pacote.
 
 ## Método
 Atualizar em cada PR: pacote, marco, tarefa/subtarefa, estado (pendente, em execução, bloqueado, em validação, concluído), evidência por commit/teste, pendências e próximo passo. Não inferir progresso de código escrito. Concluído exige evidência e aceite aplicável. Percentual do pacote ponderado por marcos e fração de subtarefas verificadas; pesos iniciais PKG-01 22/28/28/22, revisáveis explicitamente. Percentual global de pacotes aceitos separado de esforço ponderado e de prontidão comercial. Gates sandbox/produção pendentes não contam como comprovados. Registrar tempo real quando disponível, sem inventar horas. Manter roadmap e escopo normativo intactos.
@@ -146,7 +146,7 @@ O PR #9 foi integrado em `25d1614` após os três checks do head aprovado passar
 | W3 | W3.3 | Template versionado confirmado em REST, com páginas antigas preservadas. Quarentena passou, mas W3.1/W3.2 aguardam scan real, armazenamento privado e conversões/fidelidade. W3.4 tem restauração comprovada; a cobertura de purga e retenção requer a rodada posterior. |
 | W4 | W4.3 | Três checks, quatro cenários Playwright, regressões PKG-01/02 e auditoria/SBOM na rodada de referência. A cobertura de U3/U4, contratos e relatório G3 integral permanece aberta. |
 
-Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/4, W4 1/4). Pacotes aceitos **2/18**. A aprovação técnica do pacote permanece pendente.
+Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/4, W4 1/4). Pacotes aceitos **2/18**. A aprovação técnica do pacote foi concluída no head `6d5c293` e PR #10 integrado em `d11dadf`.
 
 - Head `cf76cd4`: os três checks passaram e quatro cenários Playwright concluíram em **3,3 s**. Busca textual com 15 requisições por cenário: filtrada p50 **15,42 ms** / p95 **24,12 ms**; sem filtro p50 **29,80 ms** / p95 **56,70 ms**. Medições em fixtures Compose do CI. [Execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45995895935) · [Artefatos de integração](https://github.com/giovanimarin/knowledge-manager/actions/runs/45995895935/artifacts/15196685328)
 - O check de smoke da rodada `0c4463f` falhou no cenário negativo da purga porque o login usado ainda tinha step-up da matrícula. O ajuste `e9f4f71` zera a elevação antes da negação esperada e a prepara explicitamente para a purga autorizada. Nenhum teste foi omitido. [Falha da fixture](https://github.com/giovanimarin/knowledge-manager/actions/runs/45996201070)
@@ -156,11 +156,11 @@ Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/
 
 - Em `cca33a5`, os três checks passaram. O smoke confirmou leitura e escrita negadas entre C dedicado e o conteúdo shared, além de revogação em sessão ativa e isolamento de A/B. W1.4 concluída. O cenário de metadados verificou schema de espaço, edição e busca sob ACL. W2.2 concluída.
 - Quatro cenários Playwright passaram em **3,6 s** com as regressões da fundação e identidade. O `pnpm verify` local executou **10 testes** sem falhas nem omissões. O benchmark filtrado mediu p50 **7,99 ms** e p95 **10,82 ms**, e o não filtrado p50 **16,41 ms** e p95 **18,94 ms**, com 15 requisições por cenário.
-- Validação ponderada **60%** (W1 4/4, W2 3/4, W3 1/4, W4 1/4). Purga manual e tombstone foram testados; cobertura da retenção automática e reconciliação de backups ainda pendentes. O pacote continua em revisão, com **2/18** pacotes aceitos. [Três checks do código](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503) · [Artefatos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503/artifacts/15196053824)
+- Validação ponderada **60%** (W1 4/4, W2 3/4, W3 1/4, W4 1/4). Purga manual e tombstone foram testados; cobertura da retenção automática e reconciliação de backups ainda pendentes. O pacote foi posteriormente concluído e integrado, com **3/18** pacotes aceitos. [Três checks do código](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503) · [Artefatos](https://github.com/giovanimarin/knowledge-manager/actions/runs/45997296503/artifacts/15196053824)
 
 ### Revisão técnica do PR #10
 
-**Gates locais verificados 16/16 · 100% ponderado.** O aceite do mantenedor e os gates de sandbox permanecem distintos. Pacotes formalmente aceitos **2/18** até a revisão e integração do PKG-03.
+**Gates locais verificados 16/16 · 100% ponderado.** O aceite do mantenedor e os gates de sandbox permanecem distintos. Pacotes formalmente aceitos **3/18** após revisão e integração do PKG-03.
 
 | Subtarefa | Evidência de conclusão |
 | --- | --- |
@@ -173,3 +173,11 @@ Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/
 Em `5b2474a`, os três checks passaram com as regressões 01/02 e isolamento shared/dedicated. O Playwright passou **5/5 em 4,1 s**. Backup em **10 s**, restauração em **15 s**. Com 15 requisições por cenário, busca filtrada p50 **18,06 ms** / p95 **22,80 ms** e sem filtro p50 **48,56 ms** / p95 **55,95 ms**. São medições em fixtures descartáveis. `pnpm verify` local executou 15 testes em **4,99 s**, sem omissões. [Run](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298) · [Relatórios, G3 e ClamAV](https://github.com/giovanimarin/knowledge-manager/actions/runs/46002610298/artifacts/15198533115)
 
 Rodadas intermediárias expuseram problemas de licença transitiva, advisories e fixtures U4. O npm foi atualizado, a expressão permissiva MIT + Zlib foi revisada para pako, e o contrato do seletor acessível e a resolução de caminhos de arquivos raiz foram corrigidos. O PDF usa um worker local limitado, sem dependência de binário externo na imagem. [Runbook](packages/PKG-03-runbook.md) · [Contrato e matriz por subcapacidade](packages/PKG-03-contracts.md)
+
+## Encerramento formal PKG-03
+
+- PR #10 revisado tecnicamente e integrado à main no commit `d11dadfb9e0288bacf97b7ab1e2ba1c9e4f0804d`; head aceito `6d5c29340b725ae10784d4503a0df64d9d009e78`.
+- W1/W2/W3/W4 **16/16 subtarefas aceitas**, validação do pacote **100%**. [Actions final 46003384359](https://github.com/giovanimarin/knowledge-manager/actions/runs/46003384359): 3/3 checks obrigatórios verdes e artefatos vinculados ao head, 5 Playwright, regressões de PKG-01/PKG-02, shared A/B e dedicated C, ClamAV daemon real com assinatura sintética, isolamento, formatos e retenção.
+- Pacotes aceitos **3/18 (16,7%)**. Isso não é medida de esforço completo do produto nem prontidão comercial.
+- Limites dos gates posteriores mantidos: integração autenticada real com Confluence/Notion (sandbox/G4), OCR e indexação avançada PKG-05, reconciliação autoritativa de tombstones entre backups PKG-14. A assinatura sintética ClamAV usada no CI não comprova eficácia operacional da base de assinaturas de produção.
+- **Próximo PKG-04:** editor rico/blocos e colaboração CRDT/WS real-time, versões/diffs, fluxos de revisão/publicação, ACL/revogação. Planejar marcos, pesos, subtarefas e contratos verificáveis antes de implementar. Regressões PKG-01 a 03 e gates G1/G3 obrigatórios. Escopo total aprovado preservado, sem contratação de serviços pagos.
