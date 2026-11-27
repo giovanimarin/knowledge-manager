@@ -85,6 +85,21 @@ if (mode === "dedicated") {
   assert.equal(await a.closed, 4401);
   assert.equal(await c.closed, 4403);
   assert.equal(c.frames.length, 0);
+  await request(
+    "GET",
+    "/ingestion/pages/" + root + "/chunks",
+    undefined,
+    accessC,
+    404,
+  );
+  await request(
+    "GET",
+    "/ingestion/pages/" + root + "/chunks",
+    undefined,
+    adminA,
+    401,
+  );
+
   console.log("Editor G3: dedicated rejeitou sessão e documento shared");
   process.exit(0);
 }
@@ -311,10 +326,13 @@ try {
      begin raise exception 'synthetic ingest transaction failure'; end $$;
      create trigger test_ingest_retry before insert on km.ingest_generations
      for each row execute function km.test_ingest_retry()`);
+  const ingestSpace = await request("POST", "/wiki/spaces", {
+    title: "Fixture ingestão isolada",
+  });
   db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect)
-    values ('${tenant}',gen_random_uuid(),'${permissions}','${adminMemberA}','${original.space_id}','allow')`);
+    values ('${tenant}',gen_random_uuid(),'${permissions}','${adminMemberA}','${ingestSpace.id}','allow')`);
   const connector = await request("POST", "/ingestion/sources", {
-    spaceId: original.space_id,
+    spaceId: ingestSpace.id,
     title: "Fixture REST",
   });
   const syncRoute = "/ingestion/sources/" + connector.id;
@@ -369,6 +387,12 @@ try {
     data: Buffer.from("FROZEN ATTACHMENT").toString("base64"),
   });
   assert.equal(captured.scanState, "clean");
+  const same = await request("POST", assetPath, {
+    filename: "duplicate.txt",
+    contentType: "text/plain",
+    data: Buffer.from("FROZEN ATTACHMENT").toString("base64"),
+  });
+  assert.equal(same.scanState, "clean");
   const scanImage = await request("POST", assetPath, {
     filename: "ocr.png",
     contentType: "image/png",
@@ -432,6 +456,17 @@ try {
       (row) =>
         row.block_id === captured.id && row.content === "FROZEN ATTACHMENT",
     ),
+  );
+  assert.ok(
+    chunks.some(
+      (row) => row.block_id === same.id && row.content === "FROZEN ATTACHMENT",
+    ),
+  );
+  assert.equal(
+    db(`select count(*) from km.ingest_vectors where tenant_id='${tenant}'
+    and digest=(select digest from km.ingest_chunks where tenant_id='${tenant}' and attachment_id='${captured.id}' limit 1)
+    and public.vector_dims(embedding)=64`),
+    "1",
   );
   const recognized = chunks.find((row) => row.block_id === scanImage.id);
   assert.match(recognized?.content ?? "", /ACESSO SEGURO/);
