@@ -18,10 +18,6 @@ type Publication = {
 };
 
 async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
-  // Publication, archive and wiki mutations use this same tenant lock.
-  await sql`select pg_advisory_xact_lock(71189004,hashtext(${tenant}))`.execute(
-    tx,
-  );
   const current = (
     await sql<Publication>`
     select p.id,p.revision,v.title,v.content,v.blocks
@@ -74,6 +70,52 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
     }
   }
   const chunks = [...segments(current.title, blocks), ...derived];
+  const vectors = new Map<string, string>();
+  for (const chunk of chunks) {
+    if (vectors.has(chunk.digest)) continue;
+    if (
+      (
+        await sql`select 1 from km.ingest_vectors where profile=${profile} and digest=${chunk.digest}`.execute(
+          tx,
+        )
+      ).rows.length
+    )
+      continue;
+    vectors.set(
+      chunk.digest,
+      "[" + (await embedding.vector(chunk.content)).join(",") + "]",
+    );
+  }
+  // Hold the wiki mutation lock only while revalidating and committing derivatives.
+  await sql`select pg_advisory_xact_lock(71189004,hashtext(${tenant}))`.execute(
+    tx,
+  );
+  const eligible = (
+    await sql`
+    select 1 from km.editor_publications p
+    join km.wiki_pages w on (w.tenant_id,w.id)=(p.tenant_id,p.page_id)
+    join km.organizations o on o.tenant_id=p.tenant_id
+    where p.tenant_id=${tenant} and p.page_id=${job.page_id} and p.id=${current.id}
+      and p.withdrawn_at is null and (p.expires_at is null or p.expires_at>clock_timestamp())
+      and w.deleted_batch is null and o.state='active'
+      and not exists(select from km.ingest_origin_denials d where (d.tenant_id,d.page_id)=(p.tenant_id,p.page_id))
+  `.execute(tx)
+  ).rows.length;
+  if (!eligible) return;
+  const surviving = (
+    await sql<{ id: string }>`select id from km.ingest_clean_files
+    where page_id=${job.page_id} and publication_id=${current.id} order by id limit 50`.execute(
+      tx,
+    )
+  ).rows;
+  if (
+    surviving.length !== files.length ||
+    files.some((file, index) => file.id !== surviving[index]?.id)
+  )
+    throw new Error("Publication attachments changed before activation");
+  for (const [digest, vector] of vectors)
+    await sql`insert into km.ingest_vectors values(${tenant},${profile},${digest},${vector}::public.vector)
+      on conflict do nothing`.execute(tx);
   await sql`delete from km.ingest_generations where tenant_id=${tenant} and page_id=${job.page_id}`.execute(
     tx,
   );
@@ -82,17 +124,6 @@ async function synchronize(tx: TenantTransaction, tenant: string, job: Job) {
     tx,
   );
   for (const [ordinal, chunk] of chunks.entries()) {
-    const cached = (
-      await sql`select 1 from km.ingest_vectors where profile=${profile} and digest=${chunk.digest}`.execute(
-        tx,
-      )
-    ).rows.length;
-    if (!cached) {
-      const vector =
-        "[" + (await embedding.vector(chunk.content)).join(",") + "]";
-      await sql`insert into km.ingest_vectors values(${tenant},${profile},${chunk.digest},${vector}::public.vector)
-        on conflict do nothing`.execute(tx);
-    }
     await sql`insert into km.ingest_chunks values(${tenant},${job.page_id},${chunk.id},${chunk.blockId},${ordinal},
       ${chunk.start},${chunk.end},${chunk.heading}::text[],${chunk.kind},${chunk.content},${chunk.digest},${profile},
       ${attachments.has(chunk.blockId) ? chunk.blockId : null})`.execute(tx);
