@@ -30,3 +30,22 @@ test("status page exposes dependency failure without internal details", async ({
     page.getByRole("button", { name: "Verificar novamente" }),
   ).toBeEnabled();
 });
+
+test("organization login rejects invalid credentials without exposing tenant data", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("Identificador da organização")
+    .fill("91c4c9d5-f45e-4f78-ab8f-fcf2337d86fb");
+  await page
+    .getByLabel("E-mail", { exact: true })
+    .fill("does-not-exist@example.invalid");
+  await page.getByLabel("Senha", { exact: true }).fill("intentionally-invalid");
+  const response = page.waitForResponse("**/v1/sessions");
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  expect((await response).status()).toBe(401);
+  await expect(page.getByRole("alert")).toContainText(
+    "A operação foi recusada",
+  );
+});

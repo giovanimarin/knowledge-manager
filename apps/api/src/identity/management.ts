@@ -1,0 +1,510 @@
+import { randomUUID } from "node:crypto";
+import { parse } from "csv-parse/sync";
+import { sql, type TenantTransaction } from "@km/foundation";
+import { action, assess, requirePermission, type Action } from "./policy.js";
+import { audit, changeEpoch, type Actor } from "./sessions.js";
+import {
+  digest,
+  email,
+  hashPassword,
+  id,
+  input,
+  IdentityError,
+  parseToken,
+  password,
+  string,
+  token,
+} from "./security.js";
+import type { Sessions } from "./sessions.js";
+
+const active = (state: unknown) => {
+  if (state !== "active" && state !== "suspended" && state !== "closed")
+    throw new IdentityError(400);
+  return state;
+};
+const date = (value: unknown) => {
+  const parsed = new Date(string(value, 40));
+  if (!Number.isFinite(parsed.valueOf()) || parsed <= new Date())
+    throw new IdentityError(400);
+  return parsed;
+};
+const optionalId = (value: unknown) => (value === undefined ? null : id(value));
+const optionalString = (value: unknown) =>
+  value === undefined ? null : string(value);
+
+export class Management {
+  constructor(private readonly sessions: Sessions) {}
+
+  async invite(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    data: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.members.manage",
+      true,
+    );
+    const address = email(data.email);
+    const display = string(data.name);
+    const guestUntil =
+      data.guestUntil === undefined ? null : date(data.guestUntil);
+    const proof = token(tenant, "i");
+    await sql`insert into km.proofs (tenant_id,digest,kind,payload,expires_at)
+      values (${tenant},${digest(proof)},'invite',${JSON.stringify({ email: address, name: display, guestUntil })}::jsonb,now()+interval '1 day')`.execute(
+      tx,
+    );
+    await audit(tx, tenant, current.id, "identity.invited");
+    return { proof, expiresIn: 86400 };
+  }
+
+  async bulkInvite(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    let entries: unknown = body.members;
+    if (body.csv !== undefined) {
+      const csv = string(body.csv, 50_000);
+      try {
+        entries = parse(csv, {
+          columns: true,
+          bom: true,
+          skip_empty_lines: true,
+          trim: true,
+          max_record_size: 1000,
+        });
+      } catch {
+        throw new IdentityError(400);
+      }
+    }
+    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 50)
+      throw new IdentityError(400);
+    const result = [];
+    for (const value of entries)
+      result.push(await this.invite(tx, tenant, actor, input(value)));
+    return result;
+  }
+
+  async accept(data: Record<string, unknown>) {
+    const t = parseToken(data.proof, ["i"]);
+    await this.sessions.limit(t.tenant, `invite:${t.digest}`, 5);
+    const encoded = await hashPassword(password(data.password));
+    return this.sessions.dependencies.inTenant(t.tenant, async (tx) => {
+      const proof = (
+        await sql<{
+          payload: { email: string; name: string; guestUntil: string | null };
+        }>`
+        delete from km.proofs where tenant_id=${t.tenant}
+        and digest=${t.digest} and kind='invite' and expires_at>now()
+        and exists(select from km.organizations where tenant_id=${t.tenant} and state='active')
+        returning payload`.execute(tx)
+      ).rows[0];
+      if (!proof) throw new IdentityError(401);
+      const memberId = randomUUID();
+      const { email, name, guestUntil } = proof.payload;
+      const inserted =
+        await sql`insert into km.memberships (tenant_id,id,email,name,password_hash,guest_until)
+        values (${t.tenant},${memberId},${email},${name},${encoded},${guestUntil})
+        on conflict (tenant_id,email) do nothing returning id`.execute(tx);
+      if (inserted.rows.length === 0) throw new IdentityError(409);
+      await audit(tx, t.tenant, memberId, "identity.invitation-accepted");
+      return { id: memberId };
+    });
+  }
+
+  async changeMember(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    memberId: string,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.members.manage",
+      true,
+    );
+    const state = active(body.state);
+    if (memberId === current.id) throw new IdentityError(409);
+    const result = await sql`update km.memberships set state=${state}
+      where tenant_id=${tenant} and id=${memberId} and state<>'closed' returning id`.execute(
+      tx,
+    );
+    if (!result.rows.length) throw new IdentityError(404);
+    if (state !== "active") {
+      await sql`update km.session_families set revoked_at=now() where tenant_id=${tenant} and member_id=${memberId} and revoked_at is null`.execute(
+        tx,
+      );
+      await sql`delete from km.proofs where tenant_id=${tenant} and member_id=${memberId}`.execute(
+        tx,
+      );
+      await sql`delete from km.identity_group_members where tenant_id=${tenant} and member_id=${memberId}`.execute(
+        tx,
+      );
+      await sql`delete from km.identity_grants where tenant_id=${tenant} and member_id=${memberId}`.execute(
+        tx,
+      );
+    }
+    await changeEpoch(tx, tenant);
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      `identity.member-${state}`,
+      "success",
+      memberId,
+    );
+    return { id: memberId, state };
+  }
+
+  async issueRecovery(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.members.manage",
+      true,
+    );
+    const memberId = id(body.memberId);
+    const proof = token(tenant, "p");
+    const result =
+      await sql`insert into km.proofs (tenant_id,digest,kind,member_id,expires_at)
+      select tenant_id,${digest(proof)},'recovery',id,now()+interval '15 minutes' from km.memberships
+      where tenant_id=${tenant} and id=${memberId} and state='active' and not admin returning member_id`.execute(
+        tx,
+      );
+    if (!result.rows.length) throw new IdentityError(404);
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      "identity.recovery-issued",
+      "success",
+      memberId,
+    );
+    return { proof, expiresIn: 900 };
+  }
+
+  private async canDelegate(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    operation: Action,
+    resource: string | null,
+  ) {
+    if (
+      !(await assess(tx, tenant, actor, {
+        action: operation,
+        resource,
+        channel: "web",
+        purpose: "default",
+        external: false,
+      }))
+    )
+      return false;
+    const member = actor.kind === "member" ? actor.member : null;
+    if (!member) return false;
+    const eligibility = (
+      await sql<{ allowed: boolean }>`
+      with recursive lineage(id,parent_id) as (
+        select id,parent_id from km.identity_resources where tenant_id=${tenant} and id=${resource}
+        union select r.id,r.parent_id from km.identity_resources r join lineage l on l.parent_id=r.id
+          where r.tenant_id=${tenant}
+      ), groups(id) as (
+        select group_id from km.identity_group_members where tenant_id=${tenant} and member_id=${member.id}
+        union select e.parent_id from km.identity_group_edges e join groups g on e.child_id=g.id where e.tenant_id=${tenant}
+      )
+      select (
+        (${member.admin} and ${operation} like 'identity.%' and ${resource}::uuid is null)
+        or exists (
+          select from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
+          where g.tenant_id=${tenant} and g.member_id=${member.id} and g.effect='allow'
+          and ${operation}=any(r.actions) and (g.resource_id is null or g.resource_id in (select id from lineage))
+          and g.valid_from<=now() and g.valid_until is null and g.purpose is null and g.channel is null and not g.require_step_up
+        )
+      ) and not exists (
+        select from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
+        where g.tenant_id=${tenant} and (g.member_id=${member.id} or g.group_id in(select id from groups))
+        and g.effect='deny' and ${operation}=any(r.actions)
+        and (g.resource_id is null or g.resource_id in (select id from lineage))
+        and (g.valid_until is null or g.valid_until>now())
+      ) as allowed
+    `.execute(tx)
+    ).rows[0];
+    return eligibility?.allowed === true;
+  }
+
+  private async verifyGroupGrants(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    groupId: string,
+  ) {
+    const ceilings = (
+      await sql<{ resource_id: string | null; operation: Action }>`
+      with recursive ancestors(id) as (
+        select id from km.identity_groups where tenant_id=${tenant} and id=${groupId}
+        union select e.parent_id from km.identity_group_edges e join ancestors a on a.id=e.child_id where e.tenant_id=${tenant}
+      ) select distinct g.resource_id,unnest(r.actions) operation
+      from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
+      where g.tenant_id=${tenant} and g.group_id in(select id from ancestors)
+        and (g.valid_until is null or g.valid_until>now())
+    `.execute(tx)
+    ).rows;
+    for (const grant of ceilings) {
+      if (
+        !(await this.canDelegate(
+          tx,
+          tenant,
+          actor,
+          grant.operation,
+          grant.resource_id,
+        ))
+      )
+        throw new IdentityError(403);
+    }
+  }
+
+  async replaceGroupMemberships(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    groupId: string,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.policy.manage",
+      true,
+    );
+    await changeEpoch(tx, tenant);
+    await this.verifyGroupGrants(tx, tenant, actor, groupId);
+    const group = (
+      await sql`select id from km.identity_groups where tenant_id=${tenant} and id=${groupId}`.execute(
+        tx,
+      )
+    ).rows[0];
+    if (!group) throw new IdentityError(404);
+    if (!Array.isArray(body.members) || body.members.length > 100)
+      throw new IdentityError(400);
+    await sql`delete from km.identity_group_members where tenant_id=${tenant} and group_id=${groupId}`.execute(
+      tx,
+    );
+    for (const memberId of new Set(body.members.map(id))) {
+      await sql`insert into km.identity_group_members values(${tenant},${groupId},${memberId})`.execute(
+        tx,
+      );
+    }
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      "identity.group-members-updated",
+      "success",
+      groupId,
+    );
+    return { id: groupId };
+  }
+
+  async group(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.policy.manage",
+      true,
+    );
+    const groupId = randomUUID();
+    const name = string(body.name);
+    const parent = optionalId(body.parentId);
+    const members = body.members === undefined ? [] : body.members;
+    if (!Array.isArray(members) || members.length > 100)
+      throw new IdentityError(400);
+    await sql`insert into km.identity_groups values (${tenant},${groupId},${name},${body.requireMfa === true})`.execute(
+      tx,
+    );
+    await changeEpoch(tx, tenant);
+    if (parent) {
+      await this.verifyGroupGrants(tx, tenant, actor, parent);
+      await sql`insert into km.identity_group_edges values (${tenant},${parent},${groupId})`.execute(
+        tx,
+      );
+    }
+    for (const memberId of new Set(members.map(id))) {
+      await sql`insert into km.identity_group_members values (${tenant},${groupId},${memberId})`.execute(
+        tx,
+      );
+    }
+    await changeEpoch(tx, tenant);
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      "identity.group-created",
+      "success",
+      groupId,
+    );
+    return { id: groupId, name };
+  }
+
+  async role(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.policy.manage",
+      true,
+    );
+    const id = randomUUID();
+    const name = string(body.name);
+    if (
+      !Array.isArray(body.actions) ||
+      body.actions.length < 1 ||
+      body.actions.length > 32
+    )
+      throw new IdentityError(400);
+    const operations = [...new Set(body.actions.map(action))];
+    await sql`insert into km.identity_roles values (${tenant},${id},${name},${operations}::text[],${body.requireMfa === true})`.execute(
+      tx,
+    );
+    await audit(tx, tenant, current.id, "identity.role-created", "success", id);
+    return { id, name, actions: operations };
+  }
+
+  async grant(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.policy.manage",
+      true,
+    );
+    await changeEpoch(tx, tenant);
+    const grantId = randomUUID();
+    const role = id(body.roleId);
+    const member = optionalId(body.memberId),
+      group = optionalId(body.groupId),
+      client = optionalId(body.clientId);
+    const resource = optionalId(body.resourceId);
+    if (
+      [member, group, client].filter(Boolean).length !== 1 ||
+      (body.effect !== "allow" && body.effect !== "deny")
+    )
+      throw new IdentityError(400);
+    const operations = (
+      await sql<{
+        actions: Action[];
+      }>`select actions from km.identity_roles where tenant_id=${tenant} and id=${role}`.execute(
+        tx,
+      )
+    ).rows[0]?.actions;
+    if (!operations) throw new IdentityError(404);
+    if (body.effect === "allow") {
+      for (const operation of operations) {
+        if (!(await this.canDelegate(tx, tenant, actor, operation, resource)))
+          throw new IdentityError(403);
+      }
+    }
+    await sql`insert into km.identity_grants (tenant_id,id,role_id,member_id,group_id,client_id,resource_id,effect,valid_until,purpose,channel,require_step_up)
+      values (${tenant},${grantId},${role},${member},${group},${client},${resource},${body.effect},
+        ${body.validUntil === undefined ? null : date(body.validUntil)},${optionalString(body.purpose)},${optionalString(body.channel)},${body.requireStepUp === true})`.execute(
+      tx,
+    );
+    await changeEpoch(tx, tenant);
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      "identity.grant-created",
+      "success",
+      grantId,
+    );
+    return { id: grantId };
+  }
+
+  async service(
+    tx: TenantTransaction,
+    tenant: string,
+    actor: Actor,
+    body: Record<string, unknown>,
+  ) {
+    const current = await requirePermission(
+      tx,
+      tenant,
+      actor,
+      "identity.service.manage",
+      true,
+    );
+    const serviceId = randomUUID();
+    const key = token(tenant, "k");
+    const name = string(body.name);
+    const expires = date(body.expiresAt);
+    await sql`insert into km.service_clients (tenant_id,id,name,secret_digest,expires_at)
+      values (${tenant},${serviceId},${name},${digest(key)},${expires})`.execute(
+      tx,
+    );
+    await audit(
+      tx,
+      tenant,
+      current.id,
+      "identity.service-created",
+      "success",
+      serviceId,
+    );
+    return { id: serviceId, name, key, expiresAt: expires.toISOString() };
+  }
+
+  async oauth(data: Record<string, unknown>, address: string) {
+    if (data.grant_type !== "client_credentials") throw new IdentityError(400);
+    const t = parseToken(data.client_secret, ["k"]);
+    const client = id(data.client_id);
+    await this.sessions.limit(t.tenant, `oauth-ip:${address}`, 30);
+    await this.sessions.limit(t.tenant, `oauth:${client}`, 10);
+    return this.sessions.dependencies.inTenant(t.tenant, async (tx) => {
+      const active =
+        (
+          await sql`select c.id from km.service_clients c join km.organizations o using(tenant_id)
+         where c.tenant_id=${t.tenant} and c.id=${client} and c.revoked_at is null and c.expires_at>now()
+           and c.secret_digest=${t.digest} and o.state='active' for share of c,o`.execute(
+            tx,
+          )
+        ).rows.length === 1;
+      if (!active) throw new IdentityError(401);
+      const access = token(t.tenant, "s");
+      await sql`insert into km.service_tokens values (${t.tenant},${client},${digest(access)},now()+interval '10 minutes')`.execute(
+        tx,
+      );
+      await audit(tx, t.tenant, client, "identity.service-token");
+      return { access_token: access, expires_in: 600, token_type: "Bearer" };
+    });
+  }
+}

@@ -29,15 +29,17 @@ initialize_env() {
 const { randomBytes } = require("node:crypto");
 const { writeFileSync } = require("node:fs");
 const password = () => randomBytes(32).toString("hex");
-writeFileSync(process.argv[2], `KM_APP_PASSWORD=${password()}\nKM_DB_PASSWORD=${password()}\n`, { flag: "wx", mode: 0o600 });
+writeFileSync(process.argv[2], `KM_APP_PASSWORD=${password()}\nKM_DB_PASSWORD=${password()}\nKM_IDENTITY_KEY=${password()}\n`, { flag: "wx", mode: 0o600 });
 JS
   fi
 }
 
 migrate() {
-  local checksum
+  local checksum identity_checksum worker_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
-  db -v "checksum=$checksum" -f /km-infra/migrate.sql
+  identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
+  worker_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v3-up.sql")).digest("hex"))')"
+  db -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {
@@ -58,6 +60,52 @@ setup() {
   # Open only after SQL and object checks. A failed restore is never repaired by setup.
   storage verify-start
   compose up -d --wait --no-build api worker web
+}
+
+bootstrap() {
+  local name="${1:-}" email="${2:-}" display="${3:-}" plain encoded organization member
+  local deployment="${KM_DEPLOYMENT_MODE:-shared}"
+  [[ "$deployment" == shared || "$deployment" == dedicated ]]
+  [[ -n "$name" && "$email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ && -n "$display" ]]
+  if [[ -t 0 ]]; then
+    read -r -s -p "Senha inicial (mínimo 12 caracteres): " plain
+    echo >&2
+  else
+    read -r plain
+  fi
+  encoded="$(printf '%s' "$plain" | compose exec -T api node /app/api/dist/identity/hash-password.js)"
+  unset plain
+  organization="$(node -e 'console.log(require("node:crypto").randomUUID())')"
+  member="$(node -e 'console.log(require("node:crypto").randomUUID())')"
+  db -q -v "organization=$organization" -v "member=$member" -v "name=$name" -v "email=$email" -v "display=$display" -v "encoded=$encoded" -v "deployment=$deployment" <<'SQL'
+BEGIN;
+SELECT pg_advisory_xact_lock(71189002) AS acquired \gset
+INSERT INTO km.deployment_identity (singleton,mode) VALUES (true,:'deployment') ON CONFLICT DO NOTHING;
+SELECT mode=:'deployment' AND dedicated_tenant IS NULL AS permitted FROM km.deployment_identity WHERE singleton \gset
+\if :permitted
+\else
+  DO $$ BEGIN RAISE EXCEPTION 'Deployment mode mismatch or dedicated tenant already provisioned'; END $$;
+\endif
+INSERT INTO km.organizations (tenant_id,name) VALUES (:'organization',:'name');
+UPDATE km.deployment_identity SET dedicated_tenant=:'organization' WHERE mode='dedicated';
+INSERT INTO km.memberships (tenant_id,id,email,name,password_hash,admin)
+VALUES (:'organization',:'member',lower(:'email'),:'display',:'encoded',true);
+INSERT INTO km.identity_roles (tenant_id,id,name,actions,require_mfa)
+SELECT :'organization',gen_random_uuid(),name,actions,require_mfa FROM (VALUES
+  ('Leitor',ARRAY['content.read','knowledge.query'],false),
+  ('Comentarista',ARRAY['content.read','knowledge.query','content.comment'],false),
+  ('Editor',ARRAY['content.read','knowledge.query','content.comment','content.edit','content.publish'],false),
+  ('Aprovador',ARRAY['content.read','content.comment','content.approve'],true),
+  ('Administrador de espaço',ARRAY['content.acl.manage'],true),
+  ('Gestor de conhecimento',ARRAY['knowledge.govern'],true),
+  ('Financeiro',ARRAY['billing.read'],true),
+  ('Auditor',ARRAY['identity.audit.read'],true)
+) AS preset(name,actions,require_mfa);
+INSERT INTO km.identity_audit (tenant_id,actor_id,action,resource_id,outcome)
+VALUES (:'organization',:'member','identity.organization-provisioned',:'organization','success');
+COMMIT;
+SQL
+  printf '{"tenant":"%s","member":"%s"}\n' "$organization" "$member"
 }
 
 snapshot_dir() {
@@ -112,6 +160,7 @@ restore() {
   storage restore < "$dir/storage.json"
   compose exec -T db pg_restore --exit-on-error --single-transaction -U km_bootstrap -d km < "$dir/database.dump"
   migrate
+  db -f /km-infra/restore-identity.sql
   verify_fixture
   storage complete-restore
   compose up -d --wait --no-build api worker web
@@ -121,7 +170,7 @@ restore() {
 command="${1:-}"
 shift || true
 case "$command" in
-  setup|start|stop|smoke|backup|restore)
+  setup|start|stop|smoke|backup|restore|bootstrap)
     [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Projeto Compose inválido' >&2; exit 1; }
     lock="${TMPDIR:-/tmp}/km-compose-$COMPOSE_PROJECT_NAME.lock"
     mkdir "$lock" || { echo 'Outra operação está ativa para este projeto' >&2; exit 1; }
@@ -130,6 +179,7 @@ case "$command" in
 esac
 case "$command" in
   setup) setup ;;
+  bootstrap) bootstrap "$@" ;;
   start) compose up -d --wait --no-build ;;
   stop) compose stop ;;
   status) compose ps --all ;;

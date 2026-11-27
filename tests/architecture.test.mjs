@@ -8,6 +8,10 @@ const layers = {
   "apps/api": new Set([
     "@km/foundation",
     "@nestjs/common",
+    "@node-rs/argon2",
+    "otpauth",
+    "csv-parse/sync",
+    "jose",
     "@nestjs/core",
     "reflect-metadata",
   ]),

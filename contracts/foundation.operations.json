@@ -35,5 +35,38 @@
       "databaseSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
       "storageSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
     }
+  },
+  "tenantProbeJob": {
+    "name": "tenant-probe.v1",
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "id", "durationMs"],
+      "properties": {
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8000
+        }
+      }
+    },
+    "result": {
+      "const": "recorded"
+    },
+    "examples": [
+      {
+        "tenantId": "6eb3d149-3b31-47df-9770-98f265200234",
+        "id": "91c4c9d5-f45e-4f78-ab8f-fcf2337d86fb",
+        "durationMs": 4600
+      }
+    ]
   }
 }

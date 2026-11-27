@@ -75,3 +75,25 @@ test("storage preserves bytes, rejects traversal and prevents overwrite", async 
     await rm(root, { force: true, recursive: true });
   }
 });
+
+test("tenant worker probe matches the queue contract and rejects out-of-scope data", () => {
+  const {
+    name,
+    data,
+    examples: [example],
+  } = operations.tenantProbeJob;
+  const validate = ajv.compile(data);
+  assert.equal(foundation.tenantProbeName, name);
+  assert.ok(validate(example));
+  assert.deepEqual(foundation.parseTenantProbe(example), example);
+  for (const invalid of [
+    { ...example, tenantId: null },
+    { ...example, durationMs: 8001 },
+    { ...example, durationMs: -1 },
+    { ...example, durationMs: 0.5 },
+    { ...example, bypassQuota: true },
+  ]) {
+    assert.equal(validate(invalid), false);
+    assert.throws(() => foundation.parseTenantProbe(invalid));
+  }
+});
