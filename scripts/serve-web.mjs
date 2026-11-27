@@ -14,7 +14,7 @@ const server = createServer(async (request, response) => {
   if (request.url?.startsWith("/v1/")) {
     const abort = AbortSignal.timeout(15000);
     const limit =
-      /^\/v1\/wiki\/(import-jobs|pages\/[^/]+\/attachments)(?:\?|$)/.test(
+      /^\/v1\/wiki\/(import-jobs|pages\/[^/]+\/(?:attachments|uploads\/[^/]+))(?:\?|$)/.test(
         request.url,
       )
         ? 12 * 1024 * 1024

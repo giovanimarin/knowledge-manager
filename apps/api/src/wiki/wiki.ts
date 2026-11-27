@@ -659,6 +659,7 @@ export class Wiki {
     }
     if (section === "relations") return this.relations(key, method, body, leaf);
     if (section === "comments") return this.comments(page, method, body, leaf);
+    if (section === "uploads") return this.uploads(key, method, body, leaf);
     if (section === "attachments")
       return this.attachments(key, method, body, leaf);
     throw missing();
@@ -1137,6 +1138,71 @@ export class Wiki {
     }
     throw missing();
   }
+  private async uploads(
+    page: string,
+    method: string,
+    body: Body,
+    leaf?: string,
+  ) {
+    await this.require("content.edit", page);
+    const principal =
+      this.actor.kind === "member"
+        ? this.actor.member.id
+        : this.actor.service.id;
+    if (method === "POST" && !leaf) {
+      const filename = string(body.filename, 180);
+      const type = string(body.mediaType, 100);
+      const size = body.size;
+      const checksum = string(body.checksum, 64);
+      if (
+        typeof size !== "number" ||
+        !Number.isInteger(size) ||
+        size < 1 ||
+        size > 8 * 1024 * 1024 ||
+        !/^[a-f0-9]{64}$/.test(checksum)
+      )
+        throw invalid();
+      await sql`delete from km.wiki_uploads where expires_at<=now()`.execute(
+        this.tx,
+      );
+      const pending = (
+        await sql<{
+          count: number;
+        }>`select count(*)::int count from km.wiki_uploads`.execute(this.tx)
+      ).rows[0]!.count;
+      if (pending >= 100) throw new IdentityError(429);
+      const key = randomUUID();
+      await sql`insert into km.wiki_uploads values
+        (${this.tenant},${page},${key},${principal},${this.actor.kind},${filename},${type},${size},${checksum},now()+interval '15 min')`.execute(
+        this.tx,
+      );
+      return { id: key, expiresInSeconds: 900 };
+    }
+    if (method === "PUT" && leaf) {
+      const key = id(leaf);
+      const upload = (
+        await sql<{
+          filename: string;
+          media_type: string;
+          size: number;
+          checksum: string;
+        }>`
+        delete from km.wiki_uploads where id=${key} and page_id=${page} and principal_id=${principal}
+          and principal_kind=${this.actor.kind} and expires_at>now()
+        returning filename,media_type,size,checksum`.execute(this.tx)
+      ).rows[0];
+      if (!upload) throw missing();
+      if (decodeFile(body.data).length !== upload.size) throw invalid();
+      return this.attachments(page, "POST", {
+        filename: upload.filename,
+        contentType: upload.media_type,
+        data: body.data,
+        sha256: upload.checksum,
+      });
+    }
+    throw missing();
+  }
+
   private async attachments(
     key: string,
     method: string,

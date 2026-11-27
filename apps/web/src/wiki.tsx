@@ -569,15 +569,28 @@ export function Wiki({ token }: { token: string }) {
                   )
                     throw new Error("Selecione arquivos de até 8 MiB cada.");
                   const bytes = new Uint8Array(await file.arrayBuffer());
-                  const data = btoa(
-                    Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
-                      "",
+                  const segments = [];
+                  for (let i = 0; i < bytes.length; i += 8192)
+                    segments.push(
+                      String.fromCharCode(...bytes.subarray(i, i + 8192)),
+                    );
+                  const checksum = Array.from(
+                    new Uint8Array(
+                      await crypto.subtle.digest("SHA-256", bytes),
                     ),
-                  );
+                    (byte) => byte.toString(16).padStart(2, "0"),
+                  ).join("");
+                  const path = "/pages/" + current.id + "/uploads";
+                  const upload = await call<{ id: string }>(path, "POST", {
+                    filename: file.name,
+                    mediaType: file.type,
+                    size: bytes.length,
+                    checksum,
+                  });
                   const result = await call<{ scanState: string }>(
-                    "/pages/" + current.id + "/attachments",
-                    "POST",
-                    { filename: file.name, contentType: file.type, data },
+                    path + "/" + upload.id,
+                    "PUT",
+                    { data: btoa(segments.join("")) },
                   );
                   if (result.scanState === "rejected")
                     throw new Error("Anexo rejeitado pelo scanner.");

@@ -80,8 +80,9 @@ export class IdentityController {
 
   private async dispatch(req: IncomingMessage, pathname: string, raw: unknown) {
     const key = `${req.method} ${pathname}`;
-    const body =
-      req.method === "POST" || req.method === "PATCH" ? input(raw) : {};
+    const body = ["POST", "PUT", "PATCH"].includes(req.method ?? "")
+      ? input(raw)
+      : {};
     const address = req.socket.remoteAddress ?? "unknown";
     const auth = req.headers.authorization;
     const publicProof = {
