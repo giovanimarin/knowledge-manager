@@ -11,7 +11,12 @@ type Summary = {
 };
 type Page = Summary & { content: string; revision: number; tags: string[] };
 type Comment = { id: string; body: string; resolved: boolean };
-type Attachment = { id: string; filename: string; scan_state: string };
+type Attachment = {
+  id: string;
+  filename: string;
+  scan_state: string;
+  content_type: string;
+};
 type Relation = {
   id: string;
   kind: string;

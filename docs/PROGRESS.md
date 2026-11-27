@@ -134,3 +134,20 @@ Estimativa de 128–216 h do roadmap. O peso de cada marco é distribuído igual
 | W4 Experiência e evidência · 15% | 20–32 h | W4.1 interface U3/U4 acessível e sem metadados negados; W4.2 contrato e integração reais com negativos por operação; W4.3 regressão 01/02 e três checks; W4.4 relatório com artefatos e medições G1/G2/G3 aplicáveis. |
 
 [Contratos e fixtures](packages/PKG-03-contracts.md) · [Matriz normativa](specification/traceability.md)
+
+## PKG-03 — execução parcial e evidências
+
+O PR #9 foi integrado em `25d1614` após os três checks do head aprovado passarem. O plano e as fixtures da wiki foram publicados em `d0ecfd3`, antes de `9e53159`. O [PR #10](https://github.com/giovanimarin/knowledge-manager/pull/10) concentra a implementação e suas validações. [Checks do PR #9](https://github.com/giovanimarin/knowledge-manager/actions/runs/45936011199)
+
+| Marco | Subtarefas com aceite comprovado | Evidências e pendências |
+| --- | --- | --- |
+| W1 | W1.1–W1.3 | Integração de espaços, múltiplos escopos, árvore, negação sem grant, ciclo e duplicação/movimento. W1.4 aguardava a prova C dedicada na rodada de referência. |
+| W2 | W2.3–W2.4 | Backlinks, links quebrados e ocultos, busca pt/en e negativos por autorização. Menções autorizadas e configuração de esquema foram acrescentadas posteriormente. Faltam testes de âncora órfã com blocos e evidência de cobertura de todos os filtros. |
+| W3 | W3.3 | Template versionado confirmado em REST, com páginas antigas preservadas. Quarentena passou, mas W3.1/W3.2 aguardam scan real, armazenamento privado e conversões/fidelidade. W3.4 tem restauração comprovada; a cobertura de purga e retenção requer a rodada posterior. |
+| W4 | W4.3 | Três checks, quatro cenários Playwright, regressões PKG-01/02 e auditoria/SBOM na rodada de referência. A cobertura de U3/U4, contratos e relatório G3 integral permanece aberta. |
+
+Validação ponderada na rodada de referência **46,25%** (W1 3/4, W2 2/4, W3 1/4, W4 1/4). Pacotes aceitos **2/18**. A aprovação técnica do pacote permanece pendente.
+
+- Head `cf76cd4`: os três checks passaram e quatro cenários Playwright concluíram em **3,3 s**. Busca textual com 15 requisições por cenário: filtrada p50 **15,42 ms** / p95 **24,12 ms**; sem filtro p50 **29,80 ms** / p95 **56,70 ms**. Medições em fixtures Compose do CI. [Execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45995895935) · [Artefatos de integração](https://github.com/giovanimarin/knowledge-manager/actions/runs/45995895935/artifacts/15196685328)
+- O check de smoke da rodada `0c4463f` falhou no cenário negativo da purga porque o login usado ainda tinha step-up da matrícula. O ajuste `e9f4f71` zera a elevação antes da negação esperada e a prepara explicitamente para a purga autorizada. Nenhum teste foi omitido. [Falha da fixture](https://github.com/giovanimarin/knowledge-manager/actions/runs/45996201070)
+- [Contrato e roteiro](packages/PKG-03-contracts.md) registram a fronteira do que foi entregue e as lacunas a fechar. Os requisitos aprovados permanecem na matriz normativa.
