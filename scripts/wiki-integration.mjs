@@ -194,10 +194,33 @@ assert.equal(
   (await request("GET", "/pages/" + root.id + "/attachments")).length,
   1,
 );
+const imported = await request("POST", "/import-jobs", {
+  format: "markdown",
+  spaceId: space.id,
+  items: [
+    { title: "Importação", content: "## Manual" },
+    {
+      title: "Filho importado",
+      content: "<script>synthetic</script>",
+      parentIndex: 0,
+    },
+  ],
+});
+const batch = await request("GET", "/import-jobs/" + imported.id);
+assert.equal(batch.items.length, 2);
+const exported = await request("POST", "/export-jobs", {
+  format: "html",
+  pageIds: [batch.items[1].id, root.id],
+});
+const output = await request("GET", "/export-jobs/" + exported.id);
+assert.match(output.documents[0].data, /&lt;script&gt;/);
+assert.ok(output.manifest.losses.includes("attachments"));
+await request("GET", "/export-jobs/" + exported.id, undefined, adminB, 404);
 const deny = randomUUID();
 db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect) values
  ('${tenant}','${deny}','${role}','${adminMemberA}','${root.id}','deny')`);
 await request("GET", "/pages/" + root.id, undefined, adminA, 404);
+await request("GET", "/export-jobs/" + exported.id, undefined, adminA, 404);
 assert.deepEqual(
   await request("GET", "/pages?q=Access%20checklist&spaceId=" + space.id),
   [],

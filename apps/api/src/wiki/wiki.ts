@@ -305,6 +305,16 @@ export class Wiki {
         this.tx,
       );
     }
+    const transfer = /^\/v1\/wiki\/(import|export)-jobs(?:\/([^/]+))?$/.exec(
+      path,
+    );
+    if (transfer)
+      return this.transfer(
+        transfer[1] === "import" ? "import" : "export",
+        method,
+        body,
+        transfer[2],
+      );
     if (path === "/v1/wiki/mentions" && method === "GET") {
       const member = localMember(this.actor).id;
       const rows = (
@@ -423,6 +433,121 @@ export class Wiki {
     if (section === "comments") return this.comments(key, method, body, leaf);
     if (section === "attachments")
       return this.attachments(key, method, body, leaf);
+    throw missing();
+  }
+
+  private async transfer(
+    kind: "import" | "export",
+    method: string,
+    body: Body,
+    leaf?: string,
+  ) {
+    const principal =
+      this.actor.kind === "member"
+        ? this.actor.member.id
+        : this.actor.service.id;
+    if (method === "POST" && !leaf) {
+      const format = string(body.format);
+      if (format !== "markdown" && (kind !== "export" || format !== "html"))
+        throw invalid();
+      const keys: string[] = [];
+      if (kind === "import") {
+        const items = body.items;
+        const spaceId = id(body.spaceId);
+        if (!Array.isArray(items) || !items.length || items.length > 20)
+          throw invalid();
+        for (const [index, value] of items.entries()) {
+          const item = input(value);
+          const position = item.parentIndex;
+          const parentId =
+            position === undefined
+              ? optionalId(body.parentId)
+              : typeof position === "number" &&
+                  Number.isInteger(position) &&
+                  position >= 0 &&
+                  position < index
+                ? keys[position]
+                : undefined;
+          if (parentId === undefined) throw invalid();
+          keys.push(
+            (
+              await this.createPage({
+                title: item.title,
+                content: item.content,
+                spaceId,
+                parentId,
+              })
+            ).id,
+          );
+        }
+      } else {
+        const ids = body.pageIds;
+        if (!Array.isArray(ids) || !ids.length || ids.length > 20)
+          throw invalid();
+        for (const key of new Set(ids.map(id))) {
+          await this.page(key);
+          keys.push(key);
+        }
+      }
+      const job = randomUUID();
+      await sql`insert into km.wiki_transfer_jobs values
+        (${this.tenant},${job},${principal},${this.actor.kind},${kind},${format},${keys}::uuid[])`.execute(
+        this.tx,
+      );
+      await this.event(kind + ".create", job);
+      return { id: job, status: "completed" };
+    }
+    if (method === "GET" && leaf) {
+      const key = id(leaf);
+      const item = (
+        await sql<{
+          format: string;
+          target_ids: string[];
+        }>`select format,target_ids from km.wiki_transfer_jobs where
+        id=${key} and kind=${kind} and principal_id=${principal} and principal_kind=${this.actor.kind}`.execute(
+          this.tx,
+        )
+      ).rows[0];
+      if (!item) throw missing();
+      const pages: Page[] = [];
+      for (const page of item.target_ids) pages.push(await this.page(page));
+      const manifest = {
+        format: item.format,
+        losses: ["attachments", "comments", "access-control", "relations"],
+        contentBasis: "current-authorized-draft",
+      };
+      if (kind === "import")
+        return {
+          id: key,
+          status: "completed",
+          items: item.target_ids.map((id) => ({ id, state: "draft" })),
+          manifest,
+        };
+      const escape = (text: string) =>
+        text
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      await this.event("export.download", key);
+      return {
+        id: key,
+        status: "completed",
+        documents: pages.map((page) => ({
+          id: page.id,
+          revision: page.revision,
+          title: page.title,
+          data:
+            item.format === "html"
+              ? "<!doctype html><meta charset=utf-8><h1>" +
+                escape(page.title) +
+                "</h1><pre>" +
+                escape(page.content) +
+                "</pre>"
+              : page.content,
+        })),
+        manifest,
+      };
+    }
     throw missing();
   }
 
@@ -561,6 +686,8 @@ export class Wiki {
         ).rows[0];
         if (
           target &&
+          (!(target.admin || target.require_mfa) ||
+            target.totp_secret !== null) &&
           (await assess(
             this.tx,
             this.tenant,

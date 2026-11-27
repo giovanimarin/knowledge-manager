@@ -55,10 +55,17 @@ CREATE TABLE km.wiki_attachments (
   PRIMARY KEY (tenant_id,page_id,id),
   FOREIGN KEY (tenant_id,page_id) REFERENCES km.wiki_pages
 );
+CREATE TABLE km.wiki_transfer_jobs (
+  tenant_id uuid NOT NULL REFERENCES km.organizations,
+  id uuid NOT NULL, principal_id uuid NOT NULL, principal_kind text NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('import','export')),
+  format text NOT NULL, target_ids uuid[] NOT NULL,
+  PRIMARY KEY (tenant_id,id)
+);
 DO $$
 DECLARE relation text;
 BEGIN
-  FOREACH relation IN ARRAY ARRAY['wiki_spaces','wiki_pages','wiki_relations','wiki_comments','wiki_templates','wiki_attachments'] LOOP
+  FOREACH relation IN ARRAY ARRAY['wiki_spaces','wiki_pages','wiki_relations','wiki_comments','wiki_templates','wiki_attachments','wiki_transfer_jobs'] LOOP
     EXECUTE format('ALTER TABLE km.%I ENABLE ROW LEVEL SECURITY', relation);
     EXECUTE format('ALTER TABLE km.%I FORCE ROW LEVEL SECURITY', relation);
     EXECUTE format('CREATE POLICY tenant_scope ON km.%I USING
