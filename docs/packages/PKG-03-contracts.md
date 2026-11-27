@@ -17,12 +17,18 @@ Editor rico, colaboração e publicação seguem PKG-04; extração/conversão a
 
 As fixtures sintéticas ficam em [contracts/fixtures/wiki.json](../../contracts/fixtures/wiki.json).
 
-## Quarentena de anexos
+## Revisão C2/C3
 
-A homologação do adaptador usa um daemon ClamAV local. Configure `KM_CLAMD_SOCKET` com um socket Unix privado legível pelo processo de API e monte o socket no contêiner se usar Compose. Uma resposta ausente, erro ou veredito incompleto conserva o objeto em quarentena. Apenas um veredito limpo permite download. A fixture de protocolo não substitui ensaio com o daemon e suas assinaturas reais.
+O [contrato verificável](../../contracts/wiki.operations.json) enumera as operações seguras e os códigos negativos. A amostra de [fidelidade](../../contracts/fixtures/wiki-formats/fidelity.json) cobre texto em português, HTML sanitizado, hierarquia e referências locais.
 
-## Operação e limites da implementação atual
+| Subcapacidade | Aceite e evidência esperada |
+| --- | --- |
+| W2.1 · DM-06 | Identificador de bloco persistente, movimentação sem trocar a âncora, remoção com indicador de órfão, histórico e menções filtradas na leitura e após revogação. |
+| W3.1 · DM-08 | Reserva autenticada por página, envio por proprietário com SHA-256 e tamanho vinculados, armazenamento de objetos por tenant, limite, quarentena, ClamAV e download mediado. |
+| W3.2 · DM-09 | Markdown, HTML, Word DOCX, PDF textual, ZIP de espaço e importação de pacotes locais Confluence/Notion. ZIP próprio preserva hierarquia, relações selecionadas e anexos limpos. HTML, PDF e Word declaram perdas de apresentação no manifesto. PDF de imagem exige OCR na fronteira PKG-05. Cada saída depende da ACL atual. |
+| W3.4 · DM-15 | Restauração dentro da janela com bytes intactos, acesso fechado durante lixeira, purga com step-up ou pelo operador de retenção, remoção física e trilha de auditoria. |
+| W4.1/W4.2/W4.4 | Browser U3/U4 com negação real, bloco/preview/importação/exportação, contrato de operação, regressão e relatório G3 com ACL, filtros, latência, formatos e manifestos. |
 
-Execute `make setup` para aplicar as migrações e `bash scripts/integration.sh` para provisionar A/B/C e o membro sintético usado pelo teste de navegador. O `pnpm verify` executa as verificações estáticas e unitárias. Atribua as permissões `content.read`, `content.edit`, `content.comment` e `content.acl.manage` pela política C1 conforme a responsabilidade do membro. A condição de administrador da organização, por si só, não concede conteúdo. Links internos são identificadores autenticados.
+As conversões preservam conteúdo textual e estruturas explicitadas pelos respectivos adaptadores. Não atribuir ACL de origem desconhecida, estilos complexos, OCR, objetos incorporados ou autenticação com Confluence/Notion a uma fixture local. Os formatos de arquivo da decisão DM-08 permanecem uploadáveis e sujeitos à política de scan. A extração e indexação desses anexos seguem PKG-05 conforme a matriz.
 
-A implementação dos jobs de transferência aceita importação em lote de Markdown e exportação de Markdown e HTML textual sanitizado, com manifesto e nova autorização na leitura. A matriz aprovada ainda requer importação de HTML, Word e PDF, ZIP de espaço, importação Confluence/Notion e validação por formato. A carga de anexos nesta branch é limitada a 60 kB por arquivo; os bytes ficam no PostgreSQL com ACL no mediador. A integração exercita quarentena e o teste unitário simula a resposta do daemon. Restam a integração real com ClamAV, a transferência de bytes por upload privado/object storage, a prévia segura e as fixtures de fidelidade. A purga local emite tombstones; reconciliação autoritativa entre snapshots pertence ao PKG-14.
+[Roteiro e verificação](PKG-03-runbook.md)
