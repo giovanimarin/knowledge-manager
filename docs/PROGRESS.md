@@ -38,7 +38,7 @@ Contratos publicados antes do código. O percentual global continua 0/18 aceitos
 
 ### M03 — CI e qualidade (28%)
 - [x] M03.01 Actions — **concluído**. Três jobs nomeados no GitHub Actions. [Execução do head 36674ce](https://github.com/giovanimarin/knowledge-manager/actions/runs/45907172008).
-- [ ] M03.02 Checks obrigatórios/permissões — **bloqueado**. A API administrativa retornou 403 e a página administrativa 404 na sessão disponível. Falta ativar/verificar proteção de main.
+- [x] M03.02 Checks obrigatórios/permissões — **concluído**. A API listou os três checks obrigatórios do ruleset Main Protection (28200918) em `main`. O PR descartável #6 teve uma reprovação intencional e dois checks aprovados. O GitHub informou `mergeable_state: blocked` com `mergeable: true` e o PR fora de rascunho. [Evidência da API](https://github.com/giovanimarin/knowledge-manager/actions/runs/45913390185/job/140227491293).
 - [x] M03.03 Build/lint/tipos — **concluído**. Build, lint, format e tipos passaram localmente.
 - [x] M03.04 Unit — **concluído**. Cinco testes de Node passaram em 2,195 s, sem skips.
 - [x] M03.05 Integração/contratos — **concluído**. OpenAPI/AJV, fila, REST, migrations e RLS sintética verificados. Colaboração/WS de produto segue o plano aprovado.
@@ -58,15 +58,15 @@ Contratos publicados antes do código. O percentual global continua 0/18 aceitos
 - [x] M04.07 OTel — **concluído**. Teste recebeu span OTLP HTTP real em servidor local, sem atributos sensíveis.
 - [x] M04.08 Benchmark/recuperação — **concluído**. 100 requests concorrência 5: p50 7.13 ms, p95 15.56 ms, p99 49.85 ms. Mesmos registros recuperados no ensaio sintético.
 - [x] M04.09 Checkout limpo sem serviços pagos — **concluído**. Worktree sem alterações antes do teste. Serviços locais e fixtures, sem credenciais externas ou APIs pagas.
-- [ ] M04.10 Documentação/aceite — **em validação**. Runbook publicado. Aceite formal depende da revisão e da comprovação da proteção obrigatória de main.
+- [ ] M04.10 Documentação/aceite — **em validação**. Runbook publicado e proteção obrigatória de `main` comprovada. Aceite formal aguarda revisão do PR #5 após os checks do novo head.
 
 ## Evidências e impedimentos
 
-Validação ponderada **95%** (M01 10/10, M02 10/10, M03 9/10, M04 9/10). Esse percentual mede subtarefas verificadas. O aceite de pacotes permanece 0/18.
+Validação ponderada **97,8%** (M01 10/10, M02 10/10, M03 10/10, M04 9/10). Esse percentual mede subtarefas verificadas. O aceite de pacotes permanece 0/18.
 
 - [PR #5](https://github.com/giovanimarin/knowledge-manager/pull/5) · [contrato C10](packages/PKG-01-contracts.md) · [runbook](packages/PKG-01-runbook.md) · [licenças](licensing/foundation.md).
 - Implementação inicial `54960bc`; runtime exercitado no checkout local em `05cf26b`; workflow revisado em `36674ce`. A execução integral de `scripts/integration.sh` no Actions confirmou setup, falhas reais, restore válido e falha fechada. No checkout limpo local, a instalação do lockfile levou 10,3 s e o teste integral de Compose terminou com código 0 em 4 min 34,732 s. Nesse ensaio, o backup com retomada levou 30 s, o restore levou 95 s e 100 requests de readiness com concorrência 5 tiveram p50 14,75 ms, p95 78,48 ms e p99 90,89 ms. Essas medições são do ambiente local de teste. Benchmarks de produto e SLOs permanecem futuros.
 - CI registrou a primeira falha de TLS do APT em `fad89d8` e a restrição de leitura do bundle fora do checkout. O fix coloca o bundle público do runner dentro do checkout só para o BuildKit, sem alterar verificação TLS nem incorporá-lo à imagem. [Primeira execução](https://github.com/giovanimarin/knowledge-manager/actions/runs/45906872874) · [execução revisada](https://github.com/giovanimarin/knowledge-manager/actions/runs/45907172008). [Smoke e relatórios](https://github.com/giovanimarin/knowledge-manager/actions/runs/45907172008/artifacts/15158302952) · [Auditoria e SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/45907172008/artifacts/15157939053).
 - As rodadas locais corrigiram permissões rootless, compatibilidade OTLP, findings nas imagens-base, ligação musl da extensão pgvector e o tratamento de desconexões ociosas do banco. Nenhuma supressão de teste ou aviso crítico foi usada.
-- **Bloqueio administrativo:** a CLI recebeu HTTP 403 para o endpoint administrativo e a página de configurações retornou 404 na sessão disponível. Um mantenedor precisa exigir os três checks em `main` e comprovar bloqueio com check ausente ou falho. Esta tarefa não está concluída.
+- **Proteção de main comprovada.** O mantenedor ativou Main Protection. No PR de teste #6, head `d623cbc`, os cinco testes de Node passaram antes da etapa deliberadamente reprovada em `Foundation / verify`. `Foundation / clean smoke` e `Foundation / audit and SBOM` passaram. O observador, com permissões somente de leitura, confirmou os três checks obrigatórios do ruleset e o estado `blocked` sem conflito. O PR #6 foi fechado sem merge. [PR de teste](https://github.com/giovanimarin/knowledge-manager/pull/6) · [Checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/45913390185) · [Resposta da API](https://github.com/giovanimarin/knowledge-manager/actions/runs/45913390185/job/140227491293).
 - As 60 decisões e os documentos normativos de produto/arquitetura foram comparados com `main` e permanecem intactos. Nenhum serviço pago foi contratado, e sandboxes e produção seguem os pacotes responsáveis.
