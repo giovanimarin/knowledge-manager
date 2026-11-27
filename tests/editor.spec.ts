@@ -34,15 +34,23 @@ test("two browser clients share rich autosave and can open a retained comparison
     const other = await context.newPage();
     const a = await openEditor(page),
       b = await openEditor(other);
-    await a.getByLabel("Tipo do novo bloco").selectOption("heading");
+    await a.getByLabel("Tipo do novo bloco").selectOption("text");
     await a.getByRole("button", { name: "Adicionar bloco" }).click();
+    await a
+      .getByRole("textbox", { name: /Texto [0-9]+$/ })
+      .last()
+      .fill("# ");
     const heading = a.getByRole("textbox", { name: /Título [0-9]+$/ }).last();
     await heading.fill("Título colaborativo");
     await expect(
       b.getByRole("heading", { name: "Título colaborativo" }),
     ).toBeVisible();
-    await b.getByLabel("Tipo do novo bloco").selectOption("checklist");
+    await b.getByLabel("Tipo do novo bloco").selectOption("text");
     await b.getByRole("button", { name: "Adicionar bloco" }).click();
+    await b
+      .getByRole("textbox", { name: /Texto [0-9]+$/ })
+      .last()
+      .fill("/checklist ");
     await b
       .getByRole("textbox", { name: /Checklist [0-9]+$/ })
       .last()
