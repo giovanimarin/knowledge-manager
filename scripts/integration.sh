@@ -123,6 +123,7 @@ export KM_DEPLOYMENT_MODE=dedicated
 unset KM_IDENTITY_KEY
 make setup
 node scripts/identity-integration.mjs dedicated "$scratch/identity"
+node scripts/wiki-integration.mjs "$scratch/identity" "$scratch/wiki-browser" dedicated
 node scripts/worker-integration.mjs "$scratch/identity" "$artifacts/worker-metrics.json" cross
 make stop
 

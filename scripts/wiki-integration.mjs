@@ -3,8 +3,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
-const [, , identityFile, browserFile] = process.argv;
-const { tenant, adminA, adminB, adminMemberA, secret } = JSON.parse(
+const [, , identityFile, browserFile, mode] = process.argv;
+const { tenant, adminA, adminB, adminMemberA, secret, accessC } = JSON.parse(
   readFileSync(identityFile, "utf8"),
 );
 const fixtures = JSON.parse(
@@ -61,6 +61,23 @@ async function request(method, path, body, token = adminA, expected = 200) {
     assert.equal(result.status, expected);
   }
   return result;
+}
+
+if (mode === "dedicated") {
+  const { root } = JSON.parse(readFileSync(browserFile, "utf8"));
+  await request("GET", "/pages/" + root, undefined, accessC, 404);
+  await request("GET", "/pages/" + root, undefined, adminA, 401);
+  await request(
+    "POST",
+    "/pages/" + root + "/comments",
+    { text: "Bloquear" },
+    accessC,
+    404,
+  );
+  console.log(
+    "Wiki G2: C dedicado não lê nem escreve documentos da topologia shared",
+  );
+  process.exit(0);
 }
 
 await request("GET", "/spaces", undefined, null, 401);
@@ -304,7 +321,7 @@ assert.equal(
 assert.deepEqual(await request("GET", "/mentions", undefined, adminB), []);
 writeFileSync(
   browserFile,
-  JSON.stringify({ tenant, email, password: secret }),
+  JSON.stringify({ tenant, email, password: secret, root: root.id }),
   { mode: 0o600 },
 );
 for (const [mode, url] of [
