@@ -121,6 +121,7 @@ export KM_DEPLOYMENT_MODE=dedicated
 unset KM_IDENTITY_KEY
 make setup
 node scripts/identity-integration.mjs dedicated "$scratch/identity"
+node scripts/worker-integration.mjs "$scratch/identity" "$artifacts/worker-metrics.json" cross
 make stop
 
 use_project source

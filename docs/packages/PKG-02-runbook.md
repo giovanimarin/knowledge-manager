@@ -32,3 +32,11 @@ bash scripts/audit.sh
 ```
 
 A suíte de integração inclui as regressões do PKG-01 e o ciclo de login/MFA, RLS, rotatividade e revogação de sessão, convite, autorização, clientes de serviço, privacidade e restore. O rollback v2 é destrutivo para os dados de identidade e reservado a um banco descartável. A autenticação federada real continua no PKG-08, os vínculos de canal em PKG-09, e as políticas nos componentes de documentos/IA entram nas fronteiras de cada domínio. Nenhum IdP ou serviço pago foi acionado.
+
+## Concorrência e quotas dos workers
+
+O contrato interno `tenant-probe.v1` exercita o processamento para uma empresa ativa. O Redis entrega os jobs. As reservas, quotas e recibos persistem no PostgreSQL na migração v3. Cada tenant tem até uma execução simultânea e 30 admissões em uma janela móvel de 60 s por padrão. O operador pode ajustar esses valores em `km.worker_policy`. A stack tem três slots globais para jobs com tenant. Exaustão de quota ou de slots posterga a entrega sem gastar a tentativa de erro do BullMQ. Uma nova admissão após falha ou expiração consome quota da própria empresa.
+
+O lease dura 3 s e é renovado a cada 1 s durante a execução longa. Um token de fencing vincula a reserva global e a do tenant. A confirmação exige token atual, lease válido e tenant ativo. O efeito deste job é o recibo no mesmo commit; uma entrega repetida devolve o resultado confirmado. Integrações futuras com efeitos externos precisarão da própria garantia de idempotência. O probe original do PKG-01 continua disponível como diagnóstico da fundação.
+
+A integração derruba a réplica responsável por um lease e verifica o progresso da outra empresa, a expiração, a retomada e a rejeição do token antigo. Também injeta uma falha transacional na primeira confirmação para observar o retry e mede eventos em `artifacts/worker-metrics.json`.

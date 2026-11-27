@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const [identity, report] = process.argv.slice(2);
-const { tenant: a, workerTenantB: b } = JSON.parse(
-  readFileSync(identity, "utf8"),
-);
+const [identity, report, mode] = process.argv.slice(2);
+const {
+  tenant: a,
+  workerTenantB: b,
+  workerTenantC: c,
+} = JSON.parse(readFileSync(identity, "utf8"));
 const compose = (...args) =>
   execFileSync(
     "docker",
@@ -56,7 +58,7 @@ const queue = (operation, data) =>
             return true;
           case "get": {
             const job = await queue.getJob(data);
-            return { state: await job.getState(), retries: job.attemptsMade, worker: job.processedBy };
+            return { state: await job.getState(), retries: job.attemptsMade, worker: job.processedBy, failure: job.failedReason };
           }
           case "stale": {
             const deps = new Dependencies();
@@ -99,6 +101,24 @@ async function until(condition, label, timeout = 22000) {
     await sleep(110);
   }
   assert.fail(label);
+}
+
+if (mode === "cross") {
+  const local = probe(c, 0);
+  const foreign = { ...local, tenantId: a };
+  const [localDelivery, foreignDelivery] = add(local, foreign);
+  await until(
+    () => queue("get", localDelivery).state === "completed",
+    "dedicated worker rejected its own tenant",
+  );
+  await until(
+    () => queue("get", foreignDelivery).state === "failed",
+    "dedicated worker accepted a shared tenant",
+  );
+  assert.equal(queue("get", foreignDelivery).failure, "Tenant unavailable");
+  assert.equal(readJob(foreign), null);
+  console.log("Worker G2: job shared rejeitado pelo worker dedicado");
+  process.exit(0);
 }
 
 db(`insert into km.worker_policy values ('${a}',1,1,6500), ('${b}',2,5,10000)`);
@@ -178,8 +198,11 @@ db(`create sequence km.test_worker_retry;
   grant usage on sequence km.test_worker_retry to km_app;
   create function km.test_worker_retry() returns trigger language plpgsql as $$
   begin
-    if new.id='${retry.id}' and new.completed_at is not null and nextval('km.test_worker_retry')=1
-    then raise exception 'synthetic first attempt failure'; end if;
+    if new.id='${retry.id}' and new.completed_at is not null then
+      if nextval('km.test_worker_retry')=1 then
+        raise exception 'synthetic first attempt failure';
+      end if;
+    end if;
     return new;
   end $$;
   create trigger test_worker_retry before update on km.worker_jobs
@@ -191,15 +214,17 @@ await until(
 );
 assert.equal(queue("get", retryDelivery).retries, 2);
 assert.equal(Number(db("select last_value from km.test_worker_retry")), 2);
-db(
-  "drop trigger test_worker_retry on km.worker_jobs; drop function km.test_worker_retry(); drop sequence km.test_worker_retry",
-);
 const [duplicate] = add(retry);
 await until(
   () => queue("get", duplicate).state === "completed",
   "duplicate did not acknowledge",
 );
 assert.equal(readJob(retry).done, true);
+assert.equal(Number(db("select last_value from km.test_worker_retry")), 2);
+db(
+  "drop trigger test_worker_retry on km.worker_jobs; drop function km.test_worker_retry(); drop sequence km.test_worker_retry",
+);
+
 assert.equal(
   db(
     `select count(*) from km.worker_jobs where id='${retry.id}' and completed_at is not null`,

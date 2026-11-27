@@ -397,9 +397,13 @@ async function dedicated() {
     c.tenant,
   );
   await request("GET", "/me", { token: a.adminA, status: 401 });
-  writeFileSync(file, JSON.stringify({ ...a, accessC: accessToken }), {
-    mode: 0o600,
-  });
+  writeFileSync(
+    file,
+    JSON.stringify({ ...a, accessC: accessToken, workerTenantC: c.tenant }),
+    {
+      mode: 0o600,
+    },
+  );
   console.log(
     "Dedicated OK: C inicializado com namespace e credenciais independentes; token de A recusado",
   );
