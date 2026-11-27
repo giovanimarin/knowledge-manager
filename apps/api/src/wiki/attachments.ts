@@ -1,31 +1,8 @@
+import { mimeForFilename } from "./attachment-types.js";
 import { createConnection } from "node:net";
 import { decodeFile } from "./conversions.js";
 import { IdentityError, string } from "../identity/security.js";
 
-const formats = new Map([
-  ["pdf", "application/pdf"],
-  [
-    "docx",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ],
-  ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
-  [
-    "pptx",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ],
-  ["csv", "text/csv"],
-  ["txt", "text/plain"],
-  ["md", "text/markdown"],
-  ["png", "image/png"],
-  ["jpg", "image/jpeg"],
-  ["jpeg", "image/jpeg"],
-  ["webp", "image/webp"],
-  ["gif", "image/gif"],
-  ["mp3", "audio/mpeg"],
-  ["wav", "audio/wav"],
-  ["mp4", "video/mp4"],
-  ["zip", "application/zip"],
-]);
 const matches = (bytes: Buffer, prefix: string) =>
   bytes.subarray(0, prefix.length).equals(Buffer.from(prefix, "latin1"));
 
@@ -38,7 +15,7 @@ export function attachmentInput(body: Record<string, unknown>) {
     !bytes.length ||
     /[\\/]/.test(filename) ||
     [...filename].some((char) => char.charCodeAt(0) < 32) ||
-    formats.get(extension) !== type
+    mimeForFilename(filename) !== type
   )
     throw new IdentityError(400);
   let valid = true;

@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+import { mimeForFilename } from "./attachment-types.js";
 import { Worker } from "node:worker_threads";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { PDFDocument, StandardFonts } from "pdf-lib";
@@ -93,10 +95,17 @@ function htmlText(html: string) {
       "br",
       "li",
       "a",
+      "img",
     ],
-    allowedAttributes: { a: ["href"] },
+    allowedAttributes: { a: ["href"], img: ["src", "alt"] },
+    allowedSchemesAppliedToAttributes: ["href", "src"],
   });
   return source
+    .replace(/<img\b([^>]*)>/g, (_match, attributes: string) => {
+      const src = /\bsrc="([^"]+)"/.exec(attributes)?.[1];
+      const alt = /\balt="([^"]*)"/.exec(attributes)?.[1] ?? "Imagem";
+      return src ? "![" + alt + "](" + src + ")" : alt;
+    })
     .replace(
       /<a href="([^"]+)">([\s\S]*?)<\/a>/g,
       (_match, href: string, label: string) => label + " (" + href + ")",
@@ -272,10 +281,51 @@ export async function importArchive(
       title: fileTitle,
       content,
     });
+    const links = [];
+    const files = [];
+    const targets = new Set<string>();
+    const references = /\]\(([^)\n]+)\)|(?:href|src)=["']([^"']+)["']/gi;
+    for (const reference of content.matchAll(references)) {
+      const raw = (reference[1] ?? reference[2] ?? "").split(/[?#]/, 1)[0]!;
+      if (!raw || /^(?:[a-z]+:|\/)/i.test(raw)) continue;
+      let target: string;
+      try {
+        target = posix.normalize(
+          posix.join(parentPath, decodeURIComponent(raw)),
+        );
+      } catch {
+        continue;
+      }
+      if (
+        !Object.hasOwn(entries, target) ||
+        targets.has(target) ||
+        target === path
+      )
+        continue;
+      targets.add(target);
+      if (paths.includes(target)) {
+        links.push({ target, type: "reference" });
+      } else {
+        const filename = posix.basename(target);
+        const contentType = mimeForFilename(filename);
+        if (contentType)
+          files.push({
+            filename,
+            contentType,
+            data: Buffer.from(entries[target]!).toString("base64"),
+          });
+      }
+    }
+    const packaged = {
+      ...item,
+      key: path,
+      ...(links.length ? { links } : {}),
+      ...(files.length ? { files } : {}),
+    };
     items.push(
       parentIndex >= 0 && parentIndex < items.length
-        ? { ...item, parentIndex }
-        : item,
+        ? { ...packaged, parentIndex }
+        : packaged,
     );
   }
   return items;
