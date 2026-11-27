@@ -351,6 +351,19 @@ try {
     ),
     "1",
   );
+  db(`update km.editor_versions set saved_at=now()-interval '31 days'
+    where tenant_id='${tenant}' and page_id='${root}' and revision=${original.revision}`);
+  execFileSync("bash", ["scripts/local.sh", "editor-maintenance"], {
+    stdio: "inherit",
+  });
+  await request(
+    "GET",
+    route + "/versions/" + original.revision,
+    undefined,
+    adminA,
+    404,
+  );
+  await request("GET", route + "/versions/" + review.revision);
   a.ws.close();
   await a.closed;
   const compose = (...args) =>
