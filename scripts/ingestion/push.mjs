@@ -5,6 +5,7 @@ export async function pushSnapshot({
   base,
   session,
   mapped,
+  nativePrincipals,
   signals = [],
   expectedCredentialVersion,
   expectedSyncCursor,
@@ -92,6 +93,7 @@ export async function pushSnapshot({
       content: "",
       operation: "upsert",
       acl: allowed ? "mapped-space" : "unknown",
+      ...(allowed && nativePrincipals?.length ? { nativePrincipals } : {}),
     };
     if (allowed) reads.push(change);
     else pending.push(change);

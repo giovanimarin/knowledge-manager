@@ -27,7 +27,8 @@ const connection = await sourceConnection({
   target: container,
 });
 const { nativeCursor = null, cursor } = await connection.request("/objects");
-const principalIds = JSON.parse(KM_CLOUD_NATIVE_PRINCIPALS ?? "[]");
+const principalIds =
+  connection.nativePrincipals ?? JSON.parse(KM_CLOUD_NATIVE_PRINCIPALS ?? "[]");
 if (
   !Array.isArray(principalIds) ||
   principalIds.length > 100 ||
@@ -64,6 +65,7 @@ const records = await pushSnapshot({
   base: KM_BASE_URL,
   session: KM_SOURCE_SESSION,
   mapped: false,
+  nativePrincipals: principalIds,
   expectedSyncCursor: cursor,
   expectedCredentialVersion: connection.credentialVersion,
 });

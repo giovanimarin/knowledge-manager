@@ -6,7 +6,7 @@ CREATE SCHEMA IF NOT EXISTS km AUTHORIZATION km_migrate;
 SET LOCAL ROLE km_migrate;
 CREATE TABLE IF NOT EXISTS km.migrations (version integer PRIMARY KEY, checksum text NOT NULL);
 SELECT EXISTS (SELECT 1 FROM km.migrations WHERE version = 1) AS applied, EXISTS (
-  SELECT 1 FROM km.migrations WHERE version NOT IN (1,2,3,4,5,6,7,8,9,10,11) OR (version = 1 AND checksum <> :'checksum') OR (version = 2 AND checksum <> :'identity_checksum') OR (version = 3 AND checksum <> :'worker_checksum') OR (version = 4 AND checksum <> :'wiki_checksum') OR (version = 5 AND checksum <> :'wiki_objects_checksum') OR (version = 6 AND checksum <> :'wiki_uploads_checksum') OR (version = 7 AND checksum <> :'editor_checksum') OR (version = 8 AND checksum <> :'ingest_checksum') OR (version = 9 AND checksum <> :'ingest_profiles_checksum') OR (version = 10 AND checksum <> :'ingest_sources_checksum') OR (version = 11 AND checksum <> :'ingest_credentials_checksum')
+  SELECT 1 FROM km.migrations WHERE version NOT IN (1,2,3,4,5,6,7,8,9,10,11,12) OR (version = 1 AND checksum <> :'checksum') OR (version = 2 AND checksum <> :'identity_checksum') OR (version = 3 AND checksum <> :'worker_checksum') OR (version = 4 AND checksum <> :'wiki_checksum') OR (version = 5 AND checksum <> :'wiki_objects_checksum') OR (version = 6 AND checksum <> :'wiki_uploads_checksum') OR (version = 7 AND checksum <> :'editor_checksum') OR (version = 8 AND checksum <> :'ingest_checksum') OR (version = 9 AND checksum <> :'ingest_profiles_checksum') OR (version = 10 AND checksum <> :'ingest_sources_checksum') OR (version = 11 AND checksum <> :'ingest_credentials_checksum') OR (version = 12 AND checksum <> :'ingest_acl_checksum')
 ) AS incompatible \gset
 \if :incompatible
   DO $$ BEGIN RAISE EXCEPTION 'Unsupported migration version or checksum'; END $$;
@@ -75,5 +75,11 @@ SELECT EXISTS (SELECT FROM km.migrations WHERE version = 11) AS ingest_credentia
 \else
   \ir v11-up.sql
   INSERT INTO km.migrations VALUES (11, :'ingest_credentials_checksum');
+\endif
+SELECT EXISTS (SELECT FROM km.migrations WHERE version = 12) AS ingest_acl_applied \gset
+\if :ingest_acl_applied
+\else
+  \ir v12-up.sql
+  INSERT INTO km.migrations VALUES (12, :'ingest_acl_checksum');
 \endif
 COMMIT;

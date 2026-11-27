@@ -49,7 +49,7 @@ export async function sources(
   const source = id(request[1]);
   if (method !== "GET") await store.lock();
   const connection = (
-    await sql<Connection>`select s.space_id,s.cursor,s.native_cursor,s.provider,s.credential_version,s.revoked_at,s.runner_id from km.ingest_sources s
+    await sql<Connection>`select s.space_id,s.cursor,s.native_cursor,s.provider,s.credential_version,s.revoked_at,s.runner_id,s.principal_mapping,s.target from km.ingest_sources s
     join km.wiki_spaces w on (w.tenant_id,w.id)=(s.tenant_id,s.space_id)
     where s.id=${source} and w.deleted_batch is null`.execute(store.tx)
   ).rows[0];
@@ -180,10 +180,21 @@ export async function sources(
       }>`select page_id,version,state from km.ingest_objects
        where source_id=${source} and remote_key=${remote}`.execute(store.tx)
     ).rows[0];
+    const native = entry.nativePrincipals;
+    const mapped = connection.principal_mapping;
+    const verified =
+      !connection.runner_id ||
+      (mapped.length > 0 &&
+        Array.isArray(native) &&
+        native.length === mapped.length &&
+        new Set(native).size === native.length &&
+        native.every((principal) =>
+          mapped.some(({ remote }) => remote === principal),
+        ));
     const state =
       entry.operation === "delete"
         ? "deleted"
-        : entry.acl === "mapped-space"
+        : entry.acl === "mapped-space" && verified
           ? "draft"
           : "quarantine";
     let page = prior?.page_id ?? null;
@@ -236,6 +247,12 @@ export async function sources(
         page = created.id;
       }
     }
+    if (page && state === "draft" && connection.runner_id)
+      await sql`insert into km.ingest_origin_acl(tenant_id,page_id,source_id,member_ids)
+        values(${store.tenant},${page},${source},${[...new Set(mapped.map(({ member }) => member))]}::uuid[])
+        on conflict(tenant_id,page_id) do update set member_ids=excluded.member_ids`.execute(
+        store.tx,
+      );
     await sql`insert into km.ingest_objects values(${store.tenant},${source},${remote},${version},${page},${state})
       on conflict(tenant_id,source_id,remote_key) do update set version=excluded.version,page_id=excluded.page_id,state=excluded.state`.execute(
       store.tx,

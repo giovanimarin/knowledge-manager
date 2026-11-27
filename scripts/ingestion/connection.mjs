@@ -46,6 +46,7 @@ export async function sourceConnection({
   return {
     request,
     credential: lease?.credential,
+    nativePrincipals: lease?.nativePrincipals,
     credentialVersion: metadata.credentialVersion,
   };
 }

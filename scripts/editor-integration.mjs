@@ -721,6 +721,9 @@ try {
     provider: "drive",
     target: "synthetic-drive",
     runnerId: clients[0].id,
+    principalMapping: [
+      { remote: "upstream-principal-a", member: adminMemberA },
+    ],
     credential: providerToken,
   };
   const configured = await request("PUT", managedPath + "/connection", setup);
@@ -771,7 +774,76 @@ try {
     workerToken,
     409,
   );
+  db(`insert into km.identity_grants(tenant_id,id,role_id,member_id,resource_id,effect)
+    values ('${tenant}',gen_random_uuid(),'${runnerRole}','${actor.id}','${ingestSpace.id}','allow')`);
+  const managedBatch = {
+    id: randomUUID(),
+    nextCursor: "native-acl",
+    credentialVersion: 2,
+    entries: [
+      {
+        ...remote,
+        remoteKey: "permitted",
+        nativePrincipals: ["upstream-principal-a"],
+      },
+      {
+        ...remote,
+        remoteKey: "mismatched",
+        nativePrincipals: ["unknown-principal"],
+      },
+    ],
+  };
+  await request("POST", managedPath + "/sync", managedBatch, workerToken);
+  const aclInventory = (
+    await request("GET", managedPath + "/objects", undefined, workerToken)
+  ).objects;
+  const aclPage = aclInventory.find(
+    (row) => row.remote_key === "permitted",
+  ).page_id;
+  assert.equal(
+    aclInventory.find((row) => row.remote_key === "mismatched").state,
+    "quarantine",
+  );
+  await request(
+    "GET",
+    "/wiki/pages/" + aclPage,
+    undefined,
+    reader.accessToken,
+    404,
+  );
+  const mappedPage = await request("GET", "/wiki/pages/" + aclPage);
+  const mappedPublish = "/editor/pages/" + aclPage + "/publication";
+  await request("POST", mappedPublish, {
+    revision: mappedPage.revision,
+    expectedRevision: mappedPage.revision,
+  });
+  await untilIngest(
+    async () =>
+      (await request("GET", "/ingestion/pages/" + aclPage + "/chunks")).length,
+    "native ACL page is not indexed",
+  );
+  await request(
+    "GET",
+    "/ingestion/pages/" + aclPage + "/chunks",
+    undefined,
+    reader.accessToken,
+    404,
+  );
+  await request(
+    "GET",
+    "/ingestion/pages/" + aclPage + "/chunks",
+    undefined,
+    adminB,
+    404,
+  );
   await request("DELETE", managedPath + "/connection");
+  await request(
+    "GET",
+    "/ingestion/pages/" + aclPage + "/chunks",
+    undefined,
+    adminA,
+    404,
+  );
   await request("POST", managedPath + "/credential", {}, workerToken, 404);
   const profileRoute = "/ingestion/profiles";
   const model = process.env.KM_INGEST_EMBED_MODEL;
@@ -865,6 +937,7 @@ try {
       "source-cursor",
       "signed-webhook-replay-rotation-revocation",
       "scoped-credential-rotation",
+      "native-acl-intersection",
     ],
   };
   if (process.env.KM_INGEST_G3_REPORT)
