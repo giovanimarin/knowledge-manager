@@ -264,13 +264,15 @@ export async function importArchive(
   if (!paths.length || paths.length > 20) throw invalid();
   const items: Item[] = [];
   for (const path of paths) {
-    const parentPath = path.slice(0, path.lastIndexOf("/"));
+    const parentPath = posix.dirname(path);
     // Notion uses nested directories named for their parent Markdown page.
-    const parentIndex = parentPath
-      ? paths.findIndex(
-          (candidate) => candidate.replace(/\.(md|html?)$/i, "") === parentPath,
-        )
-      : -1;
+    const parentIndex =
+      parentPath !== "."
+        ? paths.findIndex(
+            (candidate) =>
+              candidate.replace(/\.(md|html?)$/i, "") === parentPath,
+          )
+        : -1;
     const content = utf8(entries[path]!);
     const fileTitle = path
       .split("/")

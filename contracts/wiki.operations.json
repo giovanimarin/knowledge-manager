@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "operations": {
+    "createThread": {
+      "method": "POST",
+      "path": "/v1/wiki/pages/{id}/comments",
+      "auth": "content.read + content.comment",
+      "negative": [400, 401, 404]
+    },
+    "readThreads": {
+      "method": "GET",
+      "path": "/v1/wiki/pages/{id}/comments",
+      "auth": "content.read",
+      "negative": [401, 404]
+    },
+    "updateThread": {
+      "method": "PATCH",
+      "path": "/v1/wiki/pages/{id}/comments/{comment}",
+      "auth": "author + content.read + content.comment",
+      "negative": [400, 401, 404]
+    },
+    "readMentions": {
+      "method": "GET",
+      "path": "/v1/wiki/mentions",
+      "auth": "current recipient + content.read",
+      "negative": [401]
+    },
+    "reserveUpload": {
+      "method": "POST",
+      "path": "/v1/wiki/pages/{id}/uploads",
+      "auth": "content.read + content.edit",
+      "negative": [400, 401, 404, 429]
+    },
+    "finalizeUpload": {
+      "method": "PUT",
+      "path": "/v1/wiki/pages/{id}/uploads/{upload}",
+      "auth": "reserving principal + content.read + content.edit",
+      "negative": [400, 401, 404, 429]
+    },
+    "readAttachment": {
+      "method": "GET",
+      "path": "/v1/wiki/pages/{id}/attachments/{attachment}",
+      "auth": "content.read + current clean scan verdict",
+      "negative": [401, 404]
+    },
+    "rescanAttachment": {
+      "method": "POST",
+      "path": "/v1/wiki/pages/{id}/attachments/{attachment}",
+      "auth": "content.read + content.edit + pending object",
+      "negative": [401, 404]
+    },
+    "import": {
+      "method": "POST",
+      "path": "/v1/wiki/import-jobs",
+      "auth": "content.edit on destination",
+      "negative": [400, 401, 404]
+    },
+    "export": {
+      "method": "POST",
+      "path": "/v1/wiki/export-jobs",
+      "auth": "content.read on all requested pages",
+      "negative": [400, 401, 404]
+    },
+    "downloadExport": {
+      "method": "GET",
+      "path": "/v1/wiki/export-jobs/{job}",
+      "auth": "requesting principal + current content.read on all pages",
+      "negative": [401, 404]
+    },
+    "trash": {
+      "method": "DELETE",
+      "path": "/v1/wiki/pages/{id}",
+      "auth": "content.acl.manage on subtree",
+      "negative": [401, 404, 409]
+    },
+    "restore": {
+      "method": "POST",
+      "path": "/v1/wiki/trash/{id}/restore",
+      "auth": "content.acl.manage on subtree + retention window",
+      "negative": [401, 404]
+    },
+    "purge": {
+      "method": "POST",
+      "path": "/v1/wiki/trash/{id}/purge",
+      "auth": "step-up + content.acl.manage on subtree",
+      "negative": [401, 403, 404]
+    }
+  },
+  "schemas": {
+    "upload": {
+      "type": "object",
+      "required": ["filename", "mediaType", "checksum", "size"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "mediaType": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size": { "type": "integer", "minimum": 1, "maximum": 8388608 }
+      }
+    },
+    "scanVerdict": { "enum": ["pending", "clean", "rejected"] },
+    "importFormat": {
+      "enum": ["markdown", "html", "word", "pdf", "zip", "confluence", "notion"]
+    },
+    "exportFormat": { "enum": ["markdown", "html", "word", "pdf", "zip"] }
+  }
+}

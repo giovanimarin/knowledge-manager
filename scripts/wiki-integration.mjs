@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 const [, , identityFile, browserFile, mode] = process.argv;
 const { tenant, adminA, adminB, adminMemberA, secret, accessC } = JSON.parse(
@@ -267,6 +267,43 @@ try {
     `delete from km.wiki_attachments where tenant_id='${tenant}' and id='${quotaId}'`,
   );
 }
+const uploadRoute = "/pages/" + root.id + "/uploads";
+const reservation = await request("POST", uploadRoute, {
+  filename: upload.filename,
+  mediaType: upload.contentType,
+  size: Buffer.from(upload.data, "base64").length,
+  checksum: createHash("sha256")
+    .update(Buffer.from(upload.data, "base64"))
+    .digest("hex"),
+});
+await request(
+  "PUT",
+  uploadRoute + "/" + reservation.id,
+  { data: upload.data },
+  adminB,
+  404,
+);
+await request(
+  "PUT",
+  uploadRoute + "/" + reservation.id,
+  { data: "b3RoZXIK" },
+  adminA,
+  400,
+);
+const privateAttachment = await request(
+  "PUT",
+  uploadRoute + "/" + reservation.id,
+  { data: upload.data },
+);
+assert.equal(privateAttachment.scanState, "clean");
+await request(
+  "PUT",
+  uploadRoute + "/" + reservation.id,
+  { data: upload.data },
+  adminA,
+  404,
+);
+await request("DELETE", attachmentPath + "/" + privateAttachment.id);
 const malicious = await request("POST", attachmentPath, {
   ...upload,
   data: Buffer.from("KM-WIKI-LOCAL-SIGNATURE").toString("base64"),
