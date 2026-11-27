@@ -50,6 +50,7 @@ for index in 1 2; do
 done
 make smoke
 node scripts/identity-integration.mjs quota "$scratch/identity"
+node scripts/worker-integration.mjs "$scratch/identity" "$artifacts/worker-metrics.json"
 echo "Escala local: duas réplicas API e worker saudáveis com fila e PostgreSQL compartilhados"
 compose up -d --wait --no-build --scale api=1 --scale worker=1
 pnpm test:e2e
@@ -89,6 +90,7 @@ db -f /km-infra/v2-down.sql
 [[ "$(db -Atc "SELECT count(*) FROM km.fixture_objects")" -gt 0 ]]
 make setup
 [[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=2")" == 1 ]]
+[[ "$(db -Atc "SELECT count(*) FROM km.migrations WHERE version=3")" == 1 ]]
 echo "Upgrade e rollback v2 verificados preservando os fixtures do PKG-01"
 compose stop web worker api
 db -f /km-infra/rollback.sql

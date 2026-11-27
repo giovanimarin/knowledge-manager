@@ -361,6 +361,7 @@ async function primary() {
     file,
     JSON.stringify({
       adminA,
+      workerTenantB: b.tenant,
       tenant: a.tenant,
       email: aAccount.email,
       secret: password,

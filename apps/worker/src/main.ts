@@ -1,7 +1,12 @@
 import { createServer } from "node:http";
+import { hostname } from "node:os";
 import {
   Dependencies,
   parseProbe,
+  Queue,
+  tenantProbeName,
+  WorkerLeases,
+  workerGlobalConcurrency,
   queueName,
   redisOptions,
   sendHealth,
@@ -11,11 +16,17 @@ import {
   Worker,
 } from "@km/foundation";
 
+import { processTenantProbe } from "./tenant-probe.js";
+
 const telemetry = startTelemetry();
 const dependencies = new Dependencies();
+const queue = new Queue(queueName, { connection: redisOptions() });
+const leases = new WorkerLeases(dependencies);
 const worker = new Worker(
   queueName,
-  async (job) => {
+  async (job, token) => {
+    if (job.name === tenantProbeName)
+      return processTenantProbe(leases, job, token);
     let id: string;
     try {
       ({ id } = parseProbe(job.name, job.data));
@@ -29,12 +40,30 @@ const worker = new Worker(
     );
     return "recorded";
   },
-  { connection: { ...redisOptions(), maxRetriesPerRequest: null } },
+  {
+    name: hostname(),
+    autorun: false,
+    concurrency: 2,
+    lockDuration: 3000,
+    stalledInterval: 1000,
+    connection: { ...redisOptions(), maxRetriesPerRequest: null },
+  },
 );
 
 worker.on("error", () =>
   console.error(JSON.stringify({ service: "worker", event: "queue_error" })),
 );
+async function run() {
+  await queue.setGlobalConcurrency(workerGlobalConcurrency);
+  await worker.run();
+}
+void run().catch(() => {
+  console.error(
+    JSON.stringify({ service: "worker", event: "queue_start_failed" }),
+  );
+  process.exit(1);
+});
+
 const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/healthz") {
     sendHealth(response, "healthy");
@@ -56,6 +85,7 @@ server.listen(3001, "0.0.0.0", () =>
 async function shutdown() {
   server.close();
   await worker.close();
+  await queue.close();
   await dependencies.close();
   await telemetry?.shutdown();
 }

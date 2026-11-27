@@ -6,7 +6,7 @@ CREATE SCHEMA IF NOT EXISTS km AUTHORIZATION km_migrate;
 SET LOCAL ROLE km_migrate;
 CREATE TABLE IF NOT EXISTS km.migrations (version integer PRIMARY KEY, checksum text NOT NULL);
 SELECT EXISTS (SELECT 1 FROM km.migrations WHERE version = 1) AS applied, EXISTS (
-  SELECT 1 FROM km.migrations WHERE version NOT IN (1,2) OR (version = 1 AND checksum <> :'checksum') OR (version = 2 AND checksum <> :'identity_checksum')
+  SELECT 1 FROM km.migrations WHERE version NOT IN (1,2,3) OR (version = 1 AND checksum <> :'checksum') OR (version = 2 AND checksum <> :'identity_checksum') OR (version = 3 AND checksum <> :'worker_checksum')
 ) AS incompatible \gset
 \if :incompatible
   DO $$ BEGIN RAISE EXCEPTION 'Unsupported migration version or checksum'; END $$;
@@ -21,5 +21,11 @@ SELECT EXISTS (SELECT FROM km.migrations WHERE version = 2) AS identity_applied 
 \else
   \ir v2-up.sql
   INSERT INTO km.migrations VALUES (2, :'identity_checksum');
+\endif
+SELECT EXISTS (SELECT FROM km.migrations WHERE version = 3) AS worker_applied \gset
+\if :worker_applied
+\else
+  \ir v3-up.sql
+  INSERT INTO km.migrations VALUES (3, :'worker_checksum');
 \endif
 COMMIT;

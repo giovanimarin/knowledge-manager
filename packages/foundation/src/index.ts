@@ -211,3 +211,38 @@ export { Queue, QueueEvents, Worker, UnrecoverableError } from "bullmq";
 
 export { sql };
 export type TenantTransaction = import("kysely").Transaction<Database>;
+
+export { DelayedError } from "bullmq";
+export type { Job } from "bullmq";
+export {
+  WorkerLeases,
+  workerLeaseMs,
+  workerGlobalConcurrency,
+} from "./worker-leases.js";
+export const tenantProbeName = "tenant-probe.v1";
+
+export function parseTenantProbe(data: unknown) {
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    Object.keys(data).length === 3 &&
+    "tenantId" in data &&
+    typeof data.tenantId === "string" &&
+    uuid.test(data.tenantId) &&
+    "id" in data &&
+    typeof data.id === "string" &&
+    uuid.test(data.id) &&
+    "durationMs" in data &&
+    typeof data.durationMs === "number" &&
+    Number.isInteger(data.durationMs) &&
+    data.durationMs >= 0 &&
+    data.durationMs <= 8000
+  ) {
+    return {
+      tenantId: data.tenantId,
+      id: data.id,
+      durationMs: data.durationMs,
+    };
+  }
+  throw new Error("Invalid tenant probe payload");
+}
