@@ -5,6 +5,7 @@ import { IdentityError, id, input, string } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
 import {
   manageConnection,
+  quarantineConnection,
   runnerCredential,
   type Connection,
 } from "./connection.js";
@@ -42,7 +43,7 @@ export async function sources(
     return { id: source };
   }
   const request =
-    /^\/v1\/ingestion\/sources\/([^/]+)(?:\/(sync|objects|connection|signals|credential))?$/.exec(
+    /^\/v1\/ingestion\/sources\/([^/]+)(?:\/(sync|objects|connection|signals|credential|quarantine))?$/.exec(
       path,
     );
   if (!request) throw missing();
@@ -67,6 +68,8 @@ export async function sources(
       store.actor.service.id !== connection.runner_id)
   )
     throw missing();
+  if (method === "POST" && request[2] === "quarantine")
+    return quarantineConnection(store, source, connection, body);
   if (method === "GET" && request[2] === "signals") {
     await store.require("content.acl.manage", connection.space_id);
     return (

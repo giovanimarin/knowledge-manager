@@ -49,7 +49,10 @@ export async function gitSource({
       },
     });
     if (!response.ok)
-      throw new Error("Git source unavailable: " + response.status);
+      throw Object.assign(
+        new Error("Git source unavailable: " + response.status),
+        { status: response.status },
+      );
     if (!response.body) throw new Error("Missing response body");
     let size = 0;
     const result = [];

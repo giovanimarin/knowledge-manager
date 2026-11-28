@@ -18,7 +18,8 @@ const [, , identity, browser, mode] = process.argv;
 const { tenant, adminA, adminB, adminMemberA, accessC } = JSON.parse(
   readFileSync(identity, "utf8"),
 );
-const { root, email, password } = JSON.parse(readFileSync(browser, "utf8"));
+const browserFixture = JSON.parse(readFileSync(browser, "utf8"));
+const { root, email, password } = browserFixture;
 const protocol = JSON.parse(
   readFileSync(new URL("../contracts/editor.protocol.json", import.meta.url)),
 );
@@ -89,6 +90,16 @@ async function frame(client, predicate) {
   assert.fail("Expected collaboration frame");
 }
 if (mode === "dedicated") {
+  assert.ok(accessC);
+  assert.equal(browserFixture.connectorIds.length, 10);
+  for (const source of browserFixture.connectorIds)
+    await request(
+      "GET",
+      "/ingestion/sources/" + source + "/connection",
+      undefined,
+      accessC,
+      404,
+    );
   const a = await connect(adminA);
   const c = await connect(accessC);
   assert.equal(await a.closed, 4401);
@@ -782,6 +793,7 @@ try {
         ).access_token,
     ),
   );
+  const connectorIds = [managed.id];
   const signing = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const sns = {
     topic: "arn:aws:sns:us-east-1:000000000000:fixture",
@@ -834,6 +846,7 @@ try {
       spaceId: ingestSpace.id,
       title: "Managed fixture " + provider,
     });
+    connectorIds.push(source.id);
     const path = "/ingestion/sources/" + source.id;
     const graph = ["sharepoint", "onedrive"].includes(provider);
     const subscription = randomUUID();
@@ -857,7 +870,6 @@ try {
     assert.equal(first.credential, undefined);
     await request("POST", path + "/credential", {}, anotherToken, 404);
     await request("GET", path + "/connection", undefined, adminB, 404);
-    await request("GET", path + "/connection", undefined, accessC, 404);
     const actual = await request("POST", path + "/credential", {}, workerToken);
     assert.ok(
       actual.credential === config.credential && actual.provider === provider,
@@ -1136,6 +1148,29 @@ try {
     adminB,
     404,
   );
+  const denyParams = { cursor: "native-acl", credentialVersion: 2 };
+  await request(
+    "POST",
+    managedPath + "/quarantine",
+    denyParams,
+    anotherToken,
+    404,
+  );
+  await request(
+    "POST",
+    managedPath + "/quarantine",
+    { ...denyParams, credentialVersion: 1 },
+    workerToken,
+    409,
+  );
+  await request("POST", managedPath + "/quarantine", denyParams, workerToken);
+  await request(
+    "GET",
+    "/ingestion/pages/" + aclPage + "/chunks",
+    undefined,
+    adminA,
+    404,
+  );
   await request("DELETE", managedPath + "/connection");
   await request(
     "GET",
@@ -1145,6 +1180,9 @@ try {
     404,
   );
   await request("POST", managedPath + "/credential", {}, workerToken, 404);
+  writeFileSync(browser, JSON.stringify({ ...browserFixture, connectorIds }), {
+    mode: 0o600,
+  });
   const profileRoute = "/ingestion/profiles";
   const model = process.env.KM_INGEST_EMBED_MODEL;
   const dimension = Number(process.env.KM_INGEST_EMBED_DIMENSION);
@@ -1243,6 +1281,7 @@ try {
       "graph-basic-notifications",
       "managed-credentials-all-providers",
       "storage-native-auth-and-replay",
+      "upstream-denial-quarantine",
     ],
   };
   if (process.env.KM_INGEST_G3_REPORT)

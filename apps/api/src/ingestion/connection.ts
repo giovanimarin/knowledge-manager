@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { snsConfig, pubsubConfig } from "./storage-hooks.js";
 import { sql } from "@km/foundation";
 import { Lifecycle } from "../editor/lifecycle.js";
@@ -222,6 +223,39 @@ export async function manageConnection(
     return { revoked: true };
   }
   throw new IdentityError(404);
+}
+
+export async function quarantineConnection(
+  store: EditorStore,
+  source: string,
+  connection: Connection,
+  body: Record<string, unknown>,
+) {
+  if (
+    !connection.runner_id ||
+    store.actor.kind !== "service" ||
+    store.actor.service.id !== connection.runner_id
+  )
+    throw new IdentityError(404);
+  await store.require("content.acl.manage", connection.space_id);
+  if (
+    body.credentialVersion !== connection.credential_version ||
+    (body.cursor ?? null) !== connection.cursor
+  )
+    throw new IdentityError(409);
+  await denyImported(store, source, "quarantine");
+  await sql`update km.ingest_sources set cursor=${randomUUID()},native_cursor=null where id=${source}`.execute(
+    store.tx,
+  );
+  await audit(
+    store.tx,
+    store.tenant,
+    store.actor.service.id,
+    "ingestion.source.upstream-denied",
+    "denied",
+    connection.space_id,
+  );
+  return { quarantined: true };
 }
 
 async function denyImported(

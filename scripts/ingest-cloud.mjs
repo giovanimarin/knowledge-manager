@@ -1,4 +1,7 @@
-import { sourceConnection } from "./ingestion/connection.mjs";
+import {
+  sourceConnection,
+  guardProviderAccess,
+} from "./ingestion/connection.mjs";
 import { cloudSource, CloudSourceStatus } from "./ingestion/cloud.mjs";
 import { pushSnapshot } from "./ingestion/push.mjs";
 
@@ -51,27 +54,29 @@ const options = {
   trackNativeCursor: true,
 };
 if (!options.credential) throw new Error("Source has no authorized credential");
-let snapshot;
-try {
-  snapshot = await cloudSource(options);
-} catch (error) {
-  if (
-    !nativeCursor ||
-    !(error instanceof CloudSourceStatus) ||
-    error.status !== 410
-  )
-    throw error;
-  snapshot = await cloudSource({ ...options, nativeCursor: null });
-}
-const records = await pushSnapshot({
-  snapshot: { ...snapshot, before: nativeCursor },
-  source,
-  signals,
-  base: KM_BASE_URL,
-  session: KM_SOURCE_SESSION,
-  mapped: false,
-  nativePrincipals: principalIds,
-  expectedSyncCursor: cursor,
-  expectedCredentialVersion: connection.credentialVersion,
+const records = await guardProviderAccess(connection, cursor, async () => {
+  let snapshot;
+  try {
+    snapshot = await cloudSource(options);
+  } catch (error) {
+    if (
+      !nativeCursor ||
+      !(error instanceof CloudSourceStatus) ||
+      error.status !== 410
+    )
+      throw error;
+    snapshot = await cloudSource({ ...options, nativeCursor: null });
+  }
+  return pushSnapshot({
+    snapshot: { ...snapshot, before: nativeCursor },
+    source,
+    signals,
+    base: KM_BASE_URL,
+    session: KM_SOURCE_SESSION,
+    mapped: false,
+    nativePrincipals: principalIds,
+    expectedSyncCursor: cursor,
+    expectedCredentialVersion: connection.credentialVersion,
+  });
 });
 console.log(JSON.stringify({ provider, records }));

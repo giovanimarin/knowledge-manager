@@ -17,7 +17,7 @@ export async function sourceConnection({
   )
     throw new Error("Source control endpoint requires HTTPS or loopback");
   const prefix = "/v1/ingestion/sources/" + source;
-  async function request(path, method = "GET") {
+  async function request(path, method = "GET", body = {}) {
     const result = await fetch(new URL(prefix + path, destination), {
       method,
       redirect: "error",
@@ -26,7 +26,7 @@ export async function sourceConnection({
         Authorization: "Bearer " + session,
         "Content-Type": "application/json",
       },
-      ...(method === "POST" ? { body: "{}" } : {}),
+      ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
     });
     if (!result.ok)
       throw new Error("Source control rejected request: " + result.status);
@@ -49,4 +49,18 @@ export async function sourceConnection({
     nativePrincipals: lease?.nativePrincipals,
     credentialVersion: metadata.credentialVersion,
   };
+}
+
+export async function guardProviderAccess(connection, cursor, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    const status = error.status ?? error.$metadata?.httpStatusCode;
+    if (connection.credential && (status === 401 || status === 403))
+      await connection.request("/quarantine", "POST", {
+        cursor,
+        credentialVersion: connection.credentialVersion,
+      });
+    throw error;
+  }
 }

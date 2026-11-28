@@ -1,4 +1,7 @@
-import { sourceConnection } from "./ingestion/connection.mjs";
+import {
+  sourceConnection,
+  guardProviderAccess,
+} from "./ingestion/connection.mjs";
 import { s3Source } from "./ingestion/s3.mjs";
 import { pushSnapshot } from "./ingestion/push.mjs";
 
@@ -40,24 +43,26 @@ const signals = (await connection.request("/signals")).map(
   (row) => row.delivery,
 );
 const { cursor } = await connection.request("/objects");
-const snapshot = await s3Source({
-  bucket,
-  region: AWS_REGION,
-  endpoint: credentials ? undefined : KM_S3_ENDPOINT,
-  credentials,
-  attestAcl: Boolean(connection.nativePrincipals?.length),
-});
-const records = await pushSnapshot({
-  snapshot: connection.nativePrincipals
-    ? snapshot
-    : { ...snapshot, allowsSpace: undefined },
-  signals,
-  nativePrincipals: connection.nativePrincipals,
-  source,
-  base: KM_BASE_URL,
-  session: KM_SOURCE_SESSION,
-  expectedSyncCursor: cursor,
-  expectedCredentialVersion: connection.credentialVersion,
-  mapped: KM_S3_SOURCE_ACL === "mapped-space",
+const records = await guardProviderAccess(connection, cursor, async () => {
+  const snapshot = await s3Source({
+    bucket,
+    region: AWS_REGION,
+    endpoint: credentials ? undefined : KM_S3_ENDPOINT,
+    credentials,
+    attestAcl: Boolean(connection.nativePrincipals?.length),
+  });
+  return pushSnapshot({
+    snapshot: connection.nativePrincipals
+      ? snapshot
+      : { ...snapshot, allowsSpace: undefined },
+    signals,
+    nativePrincipals: connection.nativePrincipals,
+    source,
+    base: KM_BASE_URL,
+    session: KM_SOURCE_SESSION,
+    expectedSyncCursor: cursor,
+    expectedCredentialVersion: connection.credentialVersion,
+    mapped: KM_S3_SOURCE_ACL === "mapped-space",
+  });
 });
 console.log(JSON.stringify({ provider: "s3", records }));
