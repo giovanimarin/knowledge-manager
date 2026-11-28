@@ -1,3 +1,4 @@
+import { snsConfig, pubsubConfig } from "./storage-hooks.js";
 import { sql } from "@km/foundation";
 import { Lifecycle } from "../editor/lifecycle.js";
 import { EditorStore } from "../editor/store.js";
@@ -114,7 +115,7 @@ export async function manageConnection(
     )
       throw new IdentityError(400);
     const secret =
-      body.webhookSecret == null ? null : string(body.webhookSecret, 1024);
+      body.webhookSecret == null ? null : string(body.webhookSecret, 8192);
     if (
       secret !== null
         ? !nativeHookProviders.has(provider) || secret.length < 32
@@ -124,6 +125,8 @@ export async function manageConnection(
     if (provider === "drive" && secret) driveHookSecret(secret);
     if (["sharepoint", "onedrive"].includes(provider) && secret)
       graphHookSecret(secret);
+    if (provider === "s3" && secret) snsConfig(secret);
+    if (provider === "gcs" && secret) pubsubConfig(secret);
     const encrypted =
       secret && (await seal(secret, hookPurpose(store.tenant, source)));
     const runner = body.runnerId == null ? null : id(body.runnerId);

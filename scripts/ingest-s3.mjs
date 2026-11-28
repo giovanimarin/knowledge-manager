@@ -36,6 +36,9 @@ if (
     typeof credentials.secretAccessKey !== "string")
 )
   throw new Error("Invalid source AWS credentials");
+const signals = (await connection.request("/signals")).map(
+  (row) => row.delivery,
+);
 const { cursor } = await connection.request("/objects");
 const snapshot = await s3Source({
   bucket,
@@ -48,6 +51,7 @@ const records = await pushSnapshot({
   snapshot: connection.nativePrincipals
     ? snapshot
     : { ...snapshot, allowsSpace: undefined },
+  signals,
   nativePrincipals: connection.nativePrincipals,
   source,
   base: KM_BASE_URL,

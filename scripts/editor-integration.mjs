@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import {
+  createHmac,
+  generateKeyPairSync,
+  sign,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 const require = createRequire(
   new URL("../apps/api/package.json", import.meta.url),
 );
@@ -776,6 +782,43 @@ try {
         ).access_token,
     ),
   );
+  const signing = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const sns = {
+    topic: "arn:aws:sns:us-east-1:000000000000:fixture",
+    certificateUrl:
+      "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-fixture.pem",
+    publicKey: signing.publicKey.export({ type: "spki", format: "pem" }),
+  };
+  const pubsub = {
+    audience: "https://tenant.fixture.test/hooks",
+    email: "connectors@fixture.iam.gserviceaccount.com",
+    subscription: "projects/fixture/subscriptions/events",
+    keys: [{ ...signing.publicKey.export({ format: "jwk" }), kid: "fixture" }],
+  };
+  const toPart = (value) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  function pubsubToken(aud) {
+    const now = Math.floor(Date.now() / 1000);
+    const input =
+      toPart({ alg: "RS256", kid: "fixture" }) +
+      "." +
+      toPart({
+        iss: "https://accounts.google.com",
+        aud,
+        sub: "1010101",
+        email: pubsub.email,
+        email_verified: true,
+        iat: now,
+        exp: now + 300,
+      });
+    return (
+      input +
+      "." +
+      sign("RSA-SHA256", Buffer.from(input), signing.privateKey).toString(
+        "base64url",
+      )
+    );
+  }
   for (const provider of [
     "github",
     "gitlab",
@@ -803,6 +846,8 @@ try {
       ...(["github", "gitlab", "bitbucket"].includes(provider)
         ? { webhookSecret }
         : {}),
+      ...(provider === "s3" ? { webhookSecret: JSON.stringify(sns) } : {}),
+      ...(provider === "gcs" ? { webhookSecret: JSON.stringify(pubsub) } : {}),
       ...(graph
         ? { webhookSecret: JSON.stringify({ clientState, subscription }) }
         : {}),
@@ -845,6 +890,68 @@ try {
       assert.equal((await report("wrong")).status, 401);
       assert.equal((await report(clientState)).status, 200);
       assert.equal((await report(clientState)).status, 200);
+      assert.equal(
+        (await request("GET", path + "/signals", undefined, workerToken))
+          .length,
+        1,
+      );
+    }
+    if (provider === "s3" || provider === "gcs") {
+      const url = base + "/v1/ingestion/hooks/" + tenant + "/" + source.id;
+      let report;
+      if (provider === "s3") {
+        const event = {
+          Type: "Notification",
+          MessageId: randomUUID(),
+          TopicArn: sns.topic,
+          Message: "fixture object changed",
+          Timestamp: new Date().toISOString(),
+          SignatureVersion: "2",
+          SigningCertURL: sns.certificateUrl,
+        };
+        const canonical = [
+          "Message",
+          "MessageId",
+          "Timestamp",
+          "TopicArn",
+          "Type",
+        ]
+          .map((field) => field + "\n" + event[field] + "\n")
+          .join("");
+        const signature = sign(
+          "RSA-SHA256",
+          Buffer.from(canonical),
+          signing.privateKey,
+        ).toString("base64");
+        report = (good) =>
+          fetch(url, {
+            method: "POST",
+            signal: AbortSignal.timeout(6000),
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+            body: JSON.stringify({
+              ...event,
+              Signature: good ? signature : "AAAA",
+            }),
+          });
+      } else {
+        report = (good) =>
+          fetch(url, {
+            method: "POST",
+            signal: AbortSignal.timeout(6000),
+            headers: {
+              "Content-Type": "application/json",
+              Authorization:
+                "Bearer " + pubsubToken(good ? pubsub.audience : "other"),
+            },
+            body: JSON.stringify({
+              subscription: pubsub.subscription,
+              message: { messageId: "321" },
+            }),
+          });
+      }
+      assert.equal((await report(false)).status, 401);
+      assert.equal((await report(true)).status, 200);
+      assert.equal((await report(true)).status, 200);
       assert.equal(
         (await request("GET", path + "/signals", undefined, workerToken))
           .length,
@@ -1135,6 +1242,7 @@ try {
       "drive-channel-auth-and-replay",
       "graph-basic-notifications",
       "managed-credentials-all-providers",
+      "storage-native-auth-and-replay",
     ],
   };
   if (process.env.KM_INGEST_G3_REPORT)

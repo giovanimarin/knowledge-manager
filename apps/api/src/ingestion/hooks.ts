@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { sql, type TenantTransaction } from "@km/foundation";
+import { storageDelivery } from "./storage-hooks.js";
 import { IdentityError, unseal } from "../identity/security.js";
 
 export const hookPurpose = (tenant: string, source: string) =>
@@ -14,6 +15,8 @@ export const nativeHookProviders = new Set([
   "drive",
   "sharepoint",
   "onedrive",
+  "s3",
+  "gcs",
 ]);
 
 const graphProviders = new Set(["sharepoint", "onedrive"]);
@@ -204,20 +207,36 @@ export async function acceptHook(
   }
   if (connection.provider !== "drive" && !raw) throw new IdentityError(400);
   const bytes = raw ?? Buffer.alloc(0);
-  const { delivery, digest } =
-    connection.provider === "drive"
-      ? driveDelivery(headers, secret)
-      : graph
-        ? graphDelivery(bytes, secret)
-        : {
-            delivery: nativeDelivery(
-              connection.provider,
-              headers,
-              bytes,
-              secret,
-            ),
-            digest: createHash("sha256").update(bytes).digest("hex"),
-          };
+  let receipt: { delivery: string; digest: string };
+  if (connection.provider === "s3" || connection.provider === "gcs") {
+    const id = await storageDelivery(
+      connection.provider,
+      headers,
+      bytes,
+      secret,
+    );
+    const digest = proofHash(bytes).toString("hex");
+    receipt = {
+      delivery: digestDelivery(proofHash(id).toString("hex")),
+      digest,
+    };
+  } else {
+    receipt =
+      connection.provider === "drive"
+        ? driveDelivery(headers, secret)
+        : graph
+          ? graphDelivery(bytes, secret)
+          : {
+              delivery: nativeDelivery(
+                connection.provider,
+                headers,
+                bytes,
+                secret,
+              ),
+              digest: createHash("sha256").update(bytes).digest("hex"),
+            };
+  }
+  const { delivery, digest } = receipt;
   const remembered =
     await sql`insert into km.ingest_signals(tenant_id,source_id,credential_version,delivery,digest)
     values(${tenant},${source},${connection.credential_version},${delivery},${digest})
