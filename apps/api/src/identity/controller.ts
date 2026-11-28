@@ -43,6 +43,20 @@ export class IdentityController {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     try {
       const result = await this.dispatch(req, pathname, raw);
+      if (
+        pathname.startsWith("/v1/ingestion/hooks/") &&
+        result &&
+        typeof result === "object" &&
+        "graphChallenge" in result &&
+        typeof result.graphChallenge === "string"
+      ) {
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(result.graphChallenge);
+        return;
+      }
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
@@ -93,6 +107,9 @@ export class IdentityController {
         id(hook[2]),
         req.headers,
         req.rawBody,
+        new URL(req.url ?? "/", "http://localhost").searchParams.get(
+          "validationToken",
+        ),
       );
     const key = `${req.method} ${pathname}`;
     const body =

@@ -43,6 +43,11 @@ const server = createServer(async (request, response) => {
             "x-hub-signature",
             "x-request-uuid",
             "x-notion-signature",
+            "x-goog-channel-token",
+            "x-goog-channel-id",
+            "x-goog-resource-id",
+            "x-goog-resource-state",
+            "x-goog-message-number",
           ]
         : ["authorization", "content-type"];
       for (const name of headerNames) {

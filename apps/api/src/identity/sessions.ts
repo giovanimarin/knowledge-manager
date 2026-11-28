@@ -290,10 +290,11 @@ export class Sessions {
     source: string,
     headers: IncomingHttpHeaders,
     raw: Buffer | undefined,
+    validationToken: string | null,
   ) {
     await this.limit(tenant, `ingestion-hook:${source}`, 60);
     return this.dependencies.inTenant(tenant, (tx) =>
-      acceptHook(tx, tenant, source, headers, raw),
+      acceptHook(tx, tenant, source, headers, raw, validationToken),
     );
   }
 

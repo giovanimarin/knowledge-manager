@@ -10,7 +10,12 @@ import {
   unseal,
 } from "../identity/security.js";
 import { audit } from "../identity/sessions.js";
-import { hookPurpose, nativeHookProviders } from "./hooks.js";
+import {
+  driveHookSecret,
+  graphHookSecret,
+  hookPurpose,
+  nativeHookProviders,
+} from "./hooks.js";
 
 type Principal = { remote: string; member: string };
 
@@ -116,6 +121,9 @@ export async function manageConnection(
         : ["github", "gitlab", "bitbucket"].includes(provider)
     )
       throw new IdentityError(400);
+    if (provider === "drive" && secret) driveHookSecret(secret);
+    if (["sharepoint", "onedrive"].includes(provider) && secret)
+      graphHookSecret(secret);
     const encrypted =
       secret && (await seal(secret, hookPurpose(store.tenant, source)));
     const runner = body.runnerId == null ? null : id(body.runnerId);

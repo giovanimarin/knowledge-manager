@@ -776,9 +776,121 @@ try {
         ).access_token,
     ),
   );
+  for (const provider of [
+    "github",
+    "gitlab",
+    "bitbucket",
+    "sharepoint",
+    "onedrive",
+    "confluence",
+    "notion",
+    "s3",
+    "gcs",
+  ]) {
+    const source = await request("POST", "/ingestion/sources", {
+      spaceId: ingestSpace.id,
+      title: "Managed fixture " + provider,
+    });
+    const path = "/ingestion/sources/" + source.id;
+    const graph = ["sharepoint", "onedrive"].includes(provider);
+    const subscription = randomUUID();
+    const clientState = randomBytes(32).toString("hex");
+    const config = {
+      provider,
+      target: "workspace-fixture",
+      runnerId: clients[0].id,
+      credential: randomBytes(32).toString("hex"),
+      ...(["github", "gitlab", "bitbucket"].includes(provider)
+        ? { webhookSecret }
+        : {}),
+      ...(graph
+        ? { webhookSecret: JSON.stringify({ clientState, subscription }) }
+        : {}),
+    };
+    const first = await request("PUT", path + "/connection", config);
+    assert.equal(first.credentialVersion, 1);
+    assert.equal(first.credential, undefined);
+    await request("POST", path + "/credential", {}, anotherToken, 404);
+    await request("GET", path + "/connection", undefined, adminB, 404);
+    await request("GET", path + "/connection", undefined, accessC, 404);
+    const actual = await request("POST", path + "/credential", {}, workerToken);
+    assert.ok(
+      actual.credential === config.credential && actual.provider === provider,
+      "credential scope mismatch",
+    );
+    if (graph) {
+      const url = base + "/v1/ingestion/hooks/" + tenant + "/" + source.id;
+      const echo = await fetch(url + "?validationToken=fixture%20challenge", {
+        method: "POST",
+        signal: AbortSignal.timeout(6000),
+      });
+      assert.equal(echo.status, 200);
+      assert.match(echo.headers.get("content-type"), /text\/plain/);
+      assert.equal(await echo.text(), "fixture challenge");
+      const report = (state) =>
+        fetch(url, {
+          method: "POST",
+          signal: AbortSignal.timeout(6000),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            value: [
+              {
+                subscriptionId: subscription,
+                clientState: state,
+                changeType: "updated",
+              },
+            ],
+          }),
+        });
+      assert.equal((await report("wrong")).status, 401);
+      assert.equal((await report(clientState)).status, 200);
+      assert.equal((await report(clientState)).status, 200);
+      assert.equal(
+        (await request("GET", path + "/signals", undefined, workerToken))
+          .length,
+        1,
+      );
+    }
+    const newCredential = randomBytes(32).toString("hex");
+    await request("PUT", path + "/connection", {
+      ...config,
+      credential: newCredential,
+    });
+    const current = await request(
+      "POST",
+      path + "/credential",
+      {},
+      workerToken,
+    );
+    assert.ok(
+      current.credential === newCredential && current.credentialVersion === 2,
+      "credential rotation mismatch",
+    );
+    await request(
+      "POST",
+      path + "/sync",
+      {
+        id: randomUUID(),
+        nextCursor: "stale",
+        credentialVersion: 1,
+        entries: [],
+      },
+      workerToken,
+      409,
+    );
+    await request("DELETE", path + "/connection");
+    await request("POST", path + "/credential", {}, workerToken, 404);
+  }
+  const syntheticChannel = randomUUID();
+  const driveHook = {
+    token: randomBytes(32).toString("hex"),
+    channel: syntheticChannel,
+    resource: "fixture-drive-resource",
+  };
   const providerToken = randomBytes(32).toString("hex");
   const setup = {
     provider: "drive",
+    webhookSecret: JSON.stringify(driveHook),
     target: "synthetic-drive",
     runnerId: clients[0].id,
     principalMapping: [
@@ -806,6 +918,27 @@ try {
     from km.ingest_sources where tenant_id='${tenant}' and id='${managed.id}'`) ===
       "t",
     "credential must be encrypted",
+  );
+  const driveDelivery = (number, token = driveHook.token) =>
+    fetch(base + "/v1/ingestion/hooks/" + tenant + "/" + managed.id, {
+      method: "POST",
+      signal: AbortSignal.timeout(6000),
+      headers: {
+        "X-Goog-Channel-Token": token,
+        "X-Goog-Channel-Id": syntheticChannel,
+        "X-Goog-Resource-Id": driveHook.resource,
+        "X-Goog-Resource-State": "change",
+        "X-Goog-Message-Number": number,
+      },
+    });
+  assert.equal((await driveDelivery("3", "wrong")).status, 401);
+  assert.equal((await driveDelivery("3")).status, 200);
+  assert.equal((await driveDelivery("3")).status, 200);
+  assert.equal((await driveDelivery("4")).status, 200);
+  assert.equal(
+    (await request("GET", managedPath + "/signals", undefined, workerToken))
+      .length,
+    2,
   );
   const rotation = randomBytes(32).toString("hex");
   await request("PUT", managedPath + "/connection", {
@@ -999,6 +1132,9 @@ try {
       "gitlab-bitbucket-notion-native-hook",
       "scoped-credential-rotation",
       "native-acl-intersection",
+      "drive-channel-auth-and-replay",
+      "graph-basic-notifications",
+      "managed-credentials-all-providers",
     ],
   };
   if (process.env.KM_INGEST_G3_REPORT)

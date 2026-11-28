@@ -11,7 +11,102 @@ export const nativeHookProviders = new Set([
   "gitlab",
   "bitbucket",
   "notion",
+  "drive",
+  "sharepoint",
+  "onedrive",
 ]);
+
+const graphProviders = new Set(["sharepoint", "onedrive"]);
+const proofHash = (value: string | Buffer) =>
+  createHash("sha256").update(value).digest();
+
+export function graphHookSecret(value: string) {
+  try {
+    const { clientState, subscription } = JSON.parse(value);
+    if (
+      typeof clientState !== "string" ||
+      clientState.length < 32 ||
+      clientState.length > 128 ||
+      (subscription !== undefined &&
+        (typeof subscription !== "string" ||
+          !/^[a-f0-9-]{36}$/i.test(subscription)))
+    )
+      throw new Error();
+    return { clientState, subscription };
+  } catch {
+    throw new IdentityError(400);
+  }
+}
+
+function digestDelivery(digest: string) {
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
+function graphDelivery(body: Buffer, secret: string) {
+  const { clientState, subscription } = graphHookSecret(secret);
+  let values: unknown;
+  try {
+    values = (JSON.parse(body.toString("utf8")) as { value?: unknown })?.value;
+  } catch {
+    throw new IdentityError(400);
+  }
+  if (
+    !subscription ||
+    !Array.isArray(values) ||
+    !values.length ||
+    values.length > 100 ||
+    !values.every(
+      (item) =>
+        item?.subscriptionId === subscription &&
+        typeof item.clientState === "string" &&
+        timingSafeEqual(proofHash(item.clientState), proofHash(clientState)),
+    )
+  )
+    throw new IdentityError(401);
+  const digest = proofHash(body).toString("hex");
+  return { delivery: digestDelivery(digest), digest };
+}
+
+export function driveHookSecret(value: string) {
+  try {
+    const { token, channel, resource } = JSON.parse(value);
+    if (
+      typeof token !== "string" ||
+      token.length < 32 ||
+      token.length > 256 ||
+      typeof channel !== "string" ||
+      !/^[a-f0-9-]{36}$/i.test(channel) ||
+      typeof resource !== "string" ||
+      !/^[a-zA-Z0-9_-]{1,180}$/.test(resource)
+    )
+      throw new Error();
+    return { token, channel, resource };
+  } catch {
+    throw new IdentityError(400);
+  }
+}
+
+function driveDelivery(headers: IncomingHttpHeaders, secret: string) {
+  const { token, channel, resource } = driveHookSecret(secret);
+  const supplied = headers["x-goog-channel-token"];
+  const number = headers["x-goog-message-number"];
+  const hash = (value: string) => createHash("sha256").update(value).digest();
+  if (
+    typeof supplied !== "string" ||
+    !timingSafeEqual(hash(token), hash(supplied)) ||
+    headers["x-goog-channel-id"] !== channel ||
+    headers["x-goog-resource-id"] !== resource ||
+    typeof number !== "string" ||
+    !/^[1-9][0-9]{0,19}$/.test(number) ||
+    !["change", "sync"].includes(String(headers["x-goog-resource-state"]))
+  )
+    throw new IdentityError(401);
+  const digest = hash(JSON.stringify([channel, resource, number])).toString(
+    "hex",
+  );
+  const delivery = digestDelivery(digest);
+  return { delivery, digest };
+}
 
 function nativeDelivery(
   provider: string,
@@ -79,8 +174,9 @@ export async function acceptHook(
   source: string,
   headers: IncomingHttpHeaders,
   raw: Buffer | undefined,
+  validationToken: string | null,
 ) {
-  if (!raw || raw.length > 256000) throw new IdentityError(400);
+  if (raw && raw.length > 256000) throw new IdentityError(400);
   const connection = (
     await sql<{
       provider: string;
@@ -100,8 +196,28 @@ export async function acceptHook(
     connection.webhook_secret,
     hookPurpose(tenant, source),
   );
-  const delivery = nativeDelivery(connection.provider, headers, raw, secret);
-  const digest = createHash("sha256").update(raw).digest("hex");
+  const graph = graphProviders.has(connection.provider);
+  if (validationToken !== null) {
+    if (!graph || !/^[\x20-\x7e]{1,1024}$/.test(validationToken))
+      throw new IdentityError(400);
+    return { graphChallenge: validationToken };
+  }
+  if (connection.provider !== "drive" && !raw) throw new IdentityError(400);
+  const bytes = raw ?? Buffer.alloc(0);
+  const { delivery, digest } =
+    connection.provider === "drive"
+      ? driveDelivery(headers, secret)
+      : graph
+        ? graphDelivery(bytes, secret)
+        : {
+            delivery: nativeDelivery(
+              connection.provider,
+              headers,
+              bytes,
+              secret,
+            ),
+            digest: createHash("sha256").update(bytes).digest("hex"),
+          };
   const remembered =
     await sql`insert into km.ingest_signals(tenant_id,source_id,credential_version,delivery,digest)
     values(${tenant},${source},${connection.credential_version},${delivery},${digest})
