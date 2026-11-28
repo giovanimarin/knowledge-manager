@@ -71,7 +71,8 @@ export async function pushSnapshot({
   for (const [key, object] of prior)
     if (
       (snapshot.delta ? snapshot.removed?.includes(key) : !latest.has(key)) &&
-      object.state !== "deleted"
+      object.state !== "deleted" &&
+      (!snapshot.confirmMissing || (await snapshot.confirmMissing(key)))
     )
       pending.push({ remoteKey: key, version: "deleted", operation: "delete" });
   for (const file of snapshot.files) {

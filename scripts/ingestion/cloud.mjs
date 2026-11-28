@@ -264,6 +264,7 @@ export async function cloudSource({
         throw new Error("Graph continuation outside source");
       return parsed.href;
     }
+    const changes = new Map();
     while (next) {
       cursor(next);
       const result = await get(
@@ -273,19 +274,25 @@ export async function cloudSource({
         throw new Error("Incomplete Graph inventory");
       for (const file of result.value) {
         if (!file.file && !file.deleted) continue;
-        if (file.deleted || !plainFile.test(file.name ?? "")) {
-          if (delta) removed.add(validString(file.id));
-          continue;
-        }
-        remember(
-          validString(file.id),
-          validString(file.eTag ?? file.cTag),
-          validString(file.name),
-          { signed: validString(file["@microsoft.graph.downloadUrl"]) },
-        );
+        const key = validString(file.id);
+        if (changes.size >= 150 && !changes.has(key))
+          throw new Error("Graph change inventory exceeds bounds");
+        changes.set(key, file);
       }
       checkpoint = result["@odata.deltaLink"] ?? checkpoint;
       next = result["@odata.nextLink"] ?? "";
+    }
+    for (const [key, file] of changes) {
+      if (file.deleted || !plainFile.test(file.name ?? "")) {
+        if (delta) removed.add(key);
+      } else {
+        remember(
+          key,
+          validString(file.eTag ?? file.cTag),
+          validString(file.name),
+          { graphItem: key, signed: file["@microsoft.graph.downloadUrl"] },
+        );
+      }
     }
     if (!checkpoint) throw new Error("Graph inventory has no final token");
   } else if (provider === "confluence") {
@@ -294,8 +301,16 @@ export async function cloudSource({
       "/wiki/rest/api/content/search?" +
       new URLSearchParams({ cql, expand: "version,body.storage", limit: "50" });
     while (next) {
-      cursor(next);
-      const result = await get(next);
+      const page = new URL(next, upstream);
+      if (
+        page.origin !== upstream.origin ||
+        page.pathname !== "/wiki/rest/api/content/search" ||
+        page.username ||
+        page.password
+      )
+        throw new Error("Confluence continuation outside source");
+      cursor(page.href);
+      const result = await get(page.href);
       if (!Array.isArray(result.results))
         throw new Error("Incomplete Confluence inventory");
       for (const file of result.results)
@@ -346,6 +361,22 @@ export async function cloudSource({
     checkpoint,
     delta,
     removed: [...removed],
+    ...(provider === "notion"
+      ? {
+          async confirmMissing(key) {
+            if (!/^[a-f0-9-]{32,36}$/i.test(key))
+              throw new Error("Invalid Notion page ID");
+            try {
+              const page = await get("/v1/pages/" + encodeURIComponent(key));
+              return page.archived === true || page.in_trash === true;
+            } catch (error) {
+              if (error instanceof CloudSourceStatus && error.status === 404)
+                return true;
+              throw error;
+            }
+          },
+        }
+      : {}),
     async allowsSpace(file) {
       if (!principalIds.length) return false;
       if (provider === "gcs")
@@ -428,6 +459,20 @@ export async function cloudSource({
       if (typeof item === "string") return get(item, { json: false });
       if (item?.inline !== undefined) return item.inline;
       if (item?.signed) return get(item.signed, { json: false, signed: true });
+      if (item?.graphItem) {
+        const current = await get(
+          "/v1.0/drives/" +
+            scope +
+            "/items/" +
+            encodeURIComponent(item.graphItem),
+        );
+        if ((current.eTag ?? current.cTag) !== file.version)
+          throw new Error("Graph object changed while reconciling");
+        return get(validString(current["@microsoft.graph.downloadUrl"]), {
+          json: false,
+          signed: true,
+        });
+      }
       if (item?.notion) {
         const queue = [item.notion],
           seen = new Set(),

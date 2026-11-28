@@ -318,3 +318,78 @@ test("object storage requires anonymous access to the same version and retries t
     }
   }
 });
+
+test("Graph applies the last event for repeated item IDs and can review ACL without a download ticket", async () => {
+  const path = "/v1.0/drives/fixture/root/delta";
+  const origin = "https://graph.microsoft.com";
+  const source = await cloudSource({
+    provider: "sharepoint",
+    container: "fixture",
+    nativeCursor: origin + path + "?token=old",
+    principalIds: ["mapped"],
+    request: async (url) => {
+      if (url.pathname.endsWith("/permissions"))
+        return Response.json({
+          value: [{ grantedToV2: { user: { id: "mapped" } } }],
+        });
+      if (url.searchParams.get("token") === "old")
+        return Response.json({
+          value: [{ id: "gone", name: "formerly.txt", file: {}, eTag: "1" }],
+          "@odata.nextLink": origin + path + "?token=page2",
+        });
+      assert.equal(url.searchParams.get("token"), "page2");
+      return Response.json({
+        value: [
+          { id: "gone", deleted: {} },
+          { id: "kept", name: "renamed.txt", file: {}, eTag: "2" },
+        ],
+        "@odata.deltaLink": origin + path + "?token=new",
+      });
+    },
+  });
+  assert.deepEqual(source.removed, ["gone"]);
+  assert.deepEqual(source.files, [
+    { remoteKey: "kept", version: "2", title: "renamed.txt" },
+  ]);
+  assert.equal(await source.allowsSpace(source.files[0]), true);
+});
+
+test("Notion polling observes cursor and archive without mistaking integration access for ACL proof", async () => {
+  const visited = [];
+  const source = await cloudSource({
+    provider: "notion",
+    container: "fixture",
+    principalIds: ["mapped-local"],
+    request: async (url, options) => {
+      if (url.pathname.startsWith("/v1/pages/")) {
+        const key = url.pathname.split("/").at(-1);
+        if (key.startsWith("1")) return Response.json({ archived: false });
+        if (key.startsWith("2")) return Response.json({ in_trash: true });
+        return new Response(null, { status: 404 });
+      }
+      assert.equal(url.pathname, "/v1/search");
+      const checkpoint = JSON.parse(options.body).start_cursor;
+      visited.push(checkpoint);
+      if (!checkpoint)
+        return Response.json({
+          results: [{ id: "visible", last_edited_time: "v2", title: [] }],
+          has_more: true,
+          next_cursor: "second",
+        });
+      return Response.json({
+        results: [{ id: "archived", archived: true }],
+        has_more: false,
+      });
+    },
+  });
+  assert.deepEqual(visited, [undefined, "second"]);
+  assert.deepEqual(
+    source.files.map((file) => file.remoteKey),
+    ["visible"],
+  );
+  assert.equal(await source.allowsSpace(source.files[0]), false);
+  assert.equal(source.delta, false);
+  assert.equal(await source.confirmMissing("1".repeat(32)), false);
+  assert.equal(await source.confirmMissing("2".repeat(32)), true);
+  assert.equal(await source.confirmMissing("3".repeat(32)), true);
+});
