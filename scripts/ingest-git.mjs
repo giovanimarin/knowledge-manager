@@ -27,6 +27,7 @@ const snapshot = await gitSource({
   repository,
   ref,
   attestAcl: Boolean(connection.nativePrincipals?.length),
+  principalIds: connection.nativePrincipals,
   credential: connection.credential ?? KM_GIT_SOURCE_TOKEN,
 });
 const records = await pushSnapshot({

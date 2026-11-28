@@ -118,3 +118,73 @@ test("Git repos quarantine unknown and private visibility even if the connector 
     }
   }
 });
+
+test("GitHub and GitLab attest effective private repository membership and recheck removal", async () => {
+  for (const provider of ["github", "gitlab"]) {
+    const principal = provider === "github" ? "fixture-user:123" : "123";
+    for (const member of [true, false]) {
+      const snapshot = await gitSource({
+        provider,
+        repository: "org/repo",
+        ref: "main",
+        attestAcl: true,
+        principalIds: [principal],
+        request: async (url) => {
+          const path = url.pathname;
+          if (path.includes("/trees/"))
+            return Response.json({
+              sha: "same-tree",
+              truncated: false,
+              tree: [],
+            });
+          if (path.includes("/commits/"))
+            return Response.json({ id: "same-commit" });
+          if (path.endsWith("/repository/tree")) return Response.json([]);
+          if (path.endsWith("/permission"))
+            return Response.json({
+              permission: member ? "read" : "none",
+              user: { login: "fixture-user", id: 123 },
+            });
+          if (path.endsWith("/members/all/123"))
+            return Response.json({
+              access_level: member ? 20 : 10,
+              state: "active",
+              id: 123,
+            });
+          return Response.json({ visibility: "private", private: true });
+        },
+      });
+      assert.equal(await snapshot.allowsSpace(), member);
+    }
+  }
+});
+
+test("Bitbucket verifies complete repository permissions using immutable account IDs", async () => {
+  for (const permission of ["read", "none"]) {
+    const snapshot = await gitSource({
+      provider: "bitbucket",
+      repository: "org/repo",
+      ref: "main",
+      attestAcl: true,
+      principalIds: ["account-id"],
+      request: async (url) => {
+        if (url.pathname.includes("/commit/"))
+          return Response.json({ hash: "v1" });
+        if (url.pathname.includes("/src/"))
+          return Response.json({ values: [] });
+        if (url.pathname.endsWith("/permissions/repositories/repo"))
+          return Response.json({
+            values: [
+              {
+                permission,
+                repository: { uuid: "repo-id" },
+                user: { account_id: "account-id" },
+              },
+            ],
+          });
+        return Response.json({ is_private: true, uuid: "repo-id" });
+      },
+    });
+    assert.equal(await snapshot.allowsSpace(), permission === "read");
+  }
+});

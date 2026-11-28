@@ -21,6 +21,7 @@ export async function gitSource({
   origin = origins[provider],
   credential,
   attestAcl = false,
+  principalIds = [],
   request = fetch,
 }) {
   if (!Object.hasOwn(origins, provider) || !origin || !repository || !ref)
@@ -74,17 +75,91 @@ export async function gitSource({
         ? "/api/v4/projects/" + encodeURIComponent(repository)
         : "/2.0/repositories/" + repo;
   let acl;
-  async function allowsSpace() {
+  function allowsSpace() {
+    return (acl ??= checkRepository().catch(() => false));
+  }
+  async function checkRepository() {
     if (!attestAcl) return false;
-    const result = await (acl ??= get(projectPath).catch(() => null));
-    if (!result) return false;
-    const { value } = result;
-    // Public repository metadata is positive evidence. Private repository membership
-    // may include inherited grants and requires a complete effective ACL.
-    if (provider === "github")
-      return value.visibility === "public" && value.private === false;
-    if (provider === "gitlab") return value.visibility === "public";
-    return value.is_private === false;
+    const { value } = await get(projectPath);
+    if (provider === "bitbucket") {
+      if (value.is_private === false) return true;
+      if (!principalIds.length || typeof value.uuid !== "string") return false;
+      const [workspace, slug] = repo.split("/");
+      const path =
+        "/2.0/workspaces/" + workspace + "/permissions/repositories/" + slug;
+      const seen = new Set(),
+        allowed = new Set();
+      let next = path + "?pagelen=100";
+      while (next) {
+        const url = new URL(next, upstream);
+        if (
+          url.origin !== upstream.origin ||
+          url.pathname !== path ||
+          seen.has(url.href) ||
+          seen.size >= 20
+        )
+          return false;
+        seen.add(url.href);
+        const { value: permissions } = await get(url);
+        if (!Array.isArray(permissions.values)) return false;
+        for (const row of permissions.values) {
+          if (
+            row.repository?.uuid === value.uuid &&
+            ["read", "write", "admin"].includes(row.permission)
+          )
+            allowed.add(row.user?.account_id);
+        }
+        next = permissions.next ?? "";
+      }
+      return principalIds.every((principal) => allowed.has(principal));
+    }
+    if (
+      provider === "github" &&
+      value.visibility === "public" &&
+      value.private === false
+    )
+      return true;
+    if (provider === "gitlab" && value.visibility === "public") return true;
+    if (!principalIds.length) return false;
+    if (provider === "github") {
+      for (const principal of principalIds) {
+        const identity = /^([a-zA-Z0-9-]{1,39}):([1-9][0-9]{0,19})$/.exec(
+          principal,
+        );
+        if (!identity) return false;
+        const [, login, account] = identity;
+        const { value: permission } = await get(
+          projectPath +
+            "/collaborators/" +
+            encodeURIComponent(login) +
+            "/permission",
+        );
+        if (
+          String(permission.user?.id) !== account ||
+          permission.user?.login?.toLowerCase() !== login.toLowerCase() ||
+          !["read", "triage", "write", "maintain", "admin"].includes(
+            permission.permission,
+          )
+        )
+          return false;
+      }
+      return true;
+    }
+    for (const principal of principalIds) {
+      if (!/^[1-9][0-9]{0,19}$/.test(principal)) return false;
+      const { value: member } = await get(
+        projectPath + "/members/all/" + principal,
+      );
+      // Guest membership is not proof of access to a private Git repository.
+      if (
+        String(member.id) !== principal ||
+        member.state !== "active" ||
+        ![20, 30, 40, 50].includes(member.access_level) ||
+        (member.expires_at && Date.parse(member.expires_at) <= Date.now())
+      )
+        return false;
+    }
+    return true;
   }
   function keep(records, entry) {
     if (!supported.test(entry.remoteKey)) return;
