@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readWithRetry } from "./transport.mjs";
 export async function pushSnapshot({
   snapshot,
   source,
@@ -12,14 +13,12 @@ export async function pushSnapshot({
 }) {
   const prefix = "/v1/ingestion/sources/" + source;
   async function api(path, body) {
-    const response = await fetch(new URL(prefix + path, base), {
+    const response = await readWithRetry(fetch, new URL(prefix + path, base), {
       method: body ? "POST" : "GET",
       headers: {
         Authorization: "Bearer " + session,
         "Content-Type": "application/json",
       },
-      redirect: "error",
-      signal: AbortSignal.timeout(15000),
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     if (!response.ok)

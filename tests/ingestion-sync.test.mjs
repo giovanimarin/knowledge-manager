@@ -86,3 +86,51 @@ test("incremental sync commits removals before downloading and keeps the native 
   assert.deepEqual(committed, ["removed", "updated"]);
   assert.equal(nativeCursor, "native-new");
 });
+
+test("an acknowledged provider batch is replayed with the same receipt after the response connection fails", async (t) => {
+  let batch;
+  let attempts = 0;
+  const runner = createServer(async (req, res) => {
+    if (req.method === "GET") {
+      res.end(
+        JSON.stringify({
+          cursor: null,
+          nativeCursor: null,
+          credentialVersion: 1,
+          objects: [],
+        }),
+      );
+      return;
+    }
+    let bytes = "";
+    for await (const part of req) bytes += part;
+    if (++attempts === 1) {
+      batch = bytes;
+      req.socket.destroy();
+      return;
+    }
+    if (bytes !== batch) {
+      res.writeHead(409).end();
+      return;
+    }
+    res.end(JSON.stringify({ replayed: true }));
+  });
+  await new Promise((resolve) => runner.listen(0, "127.0.0.1", resolve));
+  t.after(() => runner.close());
+  const result = await pushSnapshot({
+    snapshot: {
+      files: [{ remoteKey: "new", version: "v1" }],
+      async read() {
+        return "text";
+      },
+    },
+    source: "fixture",
+    base: "http://127.0.0.1:" + runner.address().port,
+    session: "synthetic",
+    mapped: true,
+    expectedCredentialVersion: 1,
+    expectedSyncCursor: null,
+  });
+  assert.equal(result, 1);
+  assert.equal(attempts, 2);
+});
