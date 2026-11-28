@@ -261,3 +261,24 @@ O ensaio anterior expôs uma fixture de lixeira ambígua e uma dependência nati
 A rodada `8bee6d7` detectou descarte dos cabeçalhos de assinatura pelo proxy. A correção encaminha a prova apenas nas rotas de webhook. O verify local do código `599fa14` executou **30 testes em 6,08 s**, sem falhas ou omissões, incluindo recuperação de cursor após falha de leitura.
 
 **G4 autenticado pendente.** Fixtures de protocolo e credenciais sintéticas cobrem as operações locais identificadas no runbook. Nenhuma conta autenticada de provedor foi usada nesta rodada. [Contratos](packages/PKG-05-contracts.md) · [Runbook e matriz por provedor](packages/PKG-05-runbook.md)
+
+### Revisão por provedor do head `8d07ff6`
+
+A nova rodada preserva o aceite local de N2.1/N2.4. N3.3 e N3.4 seguem em validação. A última linha de base aceita permanece **85% ponderado (14/16)** até a conclusão da nova rodada e dos critérios abertos.
+
+| Provedor | Prova local positiva e negativa adicionada |
+| --- | --- |
+| GitHub | Checkpoint da árvore, permissão efetiva da conta e recusa após perda de leitura. Teste HTTP em `tests/ingestion-git.test.mjs`. |
+| GitLab | Commit pinado, páginas da árvore e associação ativa com papel suficiente. Guest e associação ausente não autorizam importação. |
+| Bitbucket | Commit e permissões vinculados ao repositório e à conta. Inventário incompleto e continuação fora da origem são recusados. |
+| Drive | Changes API, token do canal e replay por número da mensagem. Quarentena de derivados com cursor e geração da credencial. |
+| SharePoint | Graph delta, ID repetido seguido de tombstone e verificação de ACL mesmo sem URL de download. Validação da inscrição e do clientState no smoke. |
+| OneDrive | Graph delta e negação de ACL ou continuação fora da origem. Validação da inscrição e do clientState no smoke. |
+| Confluence | Polling CQL e prova de leitura para cada conta mapeada. Negativa ou resposta ambígua bloqueiam a importação. |
+| Notion | Polling paginado, confirmação direta da ausência e HMAC. Acesso à integração não autoriza pessoas locais. |
+| S3 | HEAD público para a versão listada, GET condicional, retry e evento SNS assinado. Versão divergente e acesso privado impedem a disponibilização. |
+| GCS | HEAD público para a geração listada, retry e Pub/Sub autenticado. Geração divergente, audiência inválida e acesso privado seguem em quarentena. |
+
+`4b98be4`, `803910c`, `14a408b`, `f4a5f62`, `f6fd7f3` e `8ed2a77` registram a implementação. O primeiro smoke encontrou uma sessão C ausente na fase compartilhada. A fixture passou a validar os IDs de fontes de A na fase dedicada, usando a sessão real de C. Os testes de rotação e revogação usam credenciais sintéticas para cada provedor. [Falha intermediária](https://github.com/giovanimarin/knowledge-manager/actions/runs/46161600837) · [Contrato](packages/PKG-05-contracts.md) · [Matriz operacional](packages/PKG-05-runbook.md#cobertura-por-provedor)
+
+G4 autenticação real **pendente para todos os provedores**. Continua aberta a entrega autorizada de conteúdo quando as fontes Notion, S3 ou GCS não oferecem uma prova suficiente de ACL privada na operação configurada. O polling CQL é o caminho atual para Confluence com credenciais REST.
