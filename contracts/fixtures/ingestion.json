@@ -1,0 +1,15 @@
+{
+  "blocks": [
+    { "kind": "heading", "text": "Operações" },
+    { "kind": "table", "text": "Área | Responsável\nOperações | Ana" },
+    { "kind": "code", "text": "const ativo = true;" },
+    { "kind": "text", "text": "Ação segura. Secure action." }
+  ],
+  "negative": [
+    "unpublished",
+    "foreign-tenant",
+    "withdrawn",
+    "unknown-source-acl",
+    "duplicate-delivery"
+  ]
+}

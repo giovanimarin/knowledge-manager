@@ -216,3 +216,73 @@ Rodadas anteriores detectaram importação dupla de Yjs no unitário, licenças 
 - E1/E2/E3/E4 completos; **16/16 subtarefas, validação ponderada 100%**. [GitHub Actions final 46045510041](https://github.com/giovanimarin/knowledge-manager/actions/runs/46045510041) confirmou os três checks obrigatórios; artefatos smoke e audit no head. O smoke registrou CRDT com dois clientes, replay/ACK idempotente, reconexão 44 ms, revogação 7 ms, reinício+sync 3.532 ms e 6/6 Playwright, com regressões 01–03 e isolamento shared/dedicated. Tempos são de fixture, não SLO.
 - Retenção, avisos e vencimentos dependem de agendamento do operador via `scripts/local.sh editor-maintenance`, conforme runbook. Autenticação corporativa real, integrações downstream e escala/hardening de produção permanecem nos pacotes correspondentes.
 - **Pacotes de implementação aceitos: 4/18 (22,2%)**; não equivale a percentual de esforço nem prontidão para produção. Próximo: **PKG-05**, ingestão de conhecimento, extração/conversão, filas, deduplicação, embeddings, conectores e seus testes de isolamento/qualidade. Decompor em marcos/subtarefas e publicar contratos/fixtures antes de implementar, preservar escopo completo e zero serviços pagos sem autorização.
+
+## PKG-05 — plano de execução
+
+Estimativa de 184–320 h do roadmap. Cada marco distribui seu peso igualmente entre quatro subtarefas. Estado inicial 0/16. A branch foi atualizada com o encerramento do PKG-04 integrado no commit `9864958f`.
+
+| Marco e peso | Estimativa | Subtarefas e critérios verificáveis |
+| --- | --- | --- |
+| N1 Fila e geração · 30% | 55–96 h | N1.1 capturar publicação/retirada com recibos; N1.2 ativar com CAS sob concorrência; N1.3 retry e reprocessamento seguro, incluindo crash; N1.4 remover derivados e negar leituras após revogação. |
+| N2 Conteúdo e vetores · 30% | 55–96 h | N2.1 extrair conteúdo limpo conforme política de formato; N2.2 normalizar e segmentar blocos/listas/tabelas/código com offsets e hierarquia; N2.3 deduplicar por hash dentro do tenant mantendo referências; N2.4 gerar embeddings com perfil e verificar pgvector. |
+| N3 Conectores e sincronização · 30% | 55–96 h | N3.1 conexões locais wiki/uploads/crawler/REST; N3.2 adaptadores GitHub/GitLab/Bitbucket; N3.3 adaptadores Drive/SharePoint/OneDrive/Confluence/Notion; N3.4 S3/GCS, cursor incremental, exclusões, limites e ACL de origem. |
+| N4 Evidência · 10% | 19–32 h | N4.1 contratos/fixtures positivas e negativas; N4.2 integração local e isolamento A/B/C; N4.3 regressões 01–04 e três checks; N4.4 evidências G1/G3 e status G4 por provedor. |
+
+[Contratos e plano de testes](packages/PKG-05-contracts.md)
+
+### Implementação e evidências do PKG-05
+
+**Rodada anterior à revisão técnica. Validação ponderada de 70% em 12/16 subtarefas.** Os pesos medem os critérios comprovados na rodada registrada abaixo.
+
+| Marco      | Aceite comprovado | Evidências e pendências                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1 · 30/30 | N1.1–N1.4         | Publicação e retirada com recibos duráveis, CAS, reprocessamento concorrente, retry após falha injetada e reinício real do worker. Leitura revalida a ACL e a revogação de origem impede restauração por lixeira. `2f45c16`, `26ebe96`, `4659c7c`, `117a3d8`.                                                                                                                                                                            |
+| N2 · 15/30 | N2.2–N2.3         | Blocos, tabelas, offsets e deduplicação por hash com referência à origem. N2.1 parcial com PDF textual, OOXML, texto/CSV/Markdown e OCR de imagem com Tesseract em português/inglês. Faltam fixtures para PDF digitalizado e extensões Office legadas. N2.4 parcial com vetor lexical real em pgvector e fixture de Ollama. Faltam a execução de modelo semântico real e perfis versionados por tenant. `f6fe0b0`, `6140bcf`, `480c8f3`. |
+| N3 · 15/30 | N3.1–N3.2         | Crawler e servidor HTTP locais, lotes REST, exclusão, quarentena e protocolos Git com fixtures HTTP. N3.3–N3.4 parciais com fixtures dos adaptadores cloud e object storage. Faltam cursores nativos persistidos, credenciais por tenant, mapeamento das ACLs dos provedores, webhooks e ensaios autenticados G4. `790ae5d`, `feecd1f`, `4c73364`, `8332f68`.                                                                            |
+| N4 · 10/10 | N4.1–N4.4         | Contratos e fixtures publicados antes do código em `cc3ee7e`. Integração local com negativas shared/dedicated e regressões PKG-01 a PKG-04. Relatórios locais e de CI publicados. O estado de G4 está registrado como pendente para os provedores.                                                                                                                                                                                       |
+
+No head `66acc73`, passaram **3/3 checks obrigatórios**. O verify local executou **27 testes em 6,07 s**, sem falhas ou omissões. O smoke registrou **5.574 ms** para recuperar a ingestão no cenário de retry/reinício, **15 segmentos ativos** e **quatro pedidos simultâneos de reprocessamento**. O Tesseract **5.5.0** executou a fixture via socket privado. Os seis cenários Playwright passaram em **6,6 s** e o backup concluiu em **11 s**. O clean smoke também verificou restauração e rejeição de backup incompleto. As métricas descrevem o ambiente descartável do CI. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119) · [Smoke e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119/artifacts/15223533674) · [Auditoria e SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/46049894119/artifacts/15225015020)
+
+O ensaio anterior expôs uma fixture de lixeira ambígua e uma dependência nativa com vulnerabilidade crítica na imagem. A fixture de ingestão passou para um espaço próprio. A auditoria permaneceu obrigatória. Mermaid e KaTeX foram atualizados, e o Tesseract passou a rodar sob um processo local separado. [Runbook](packages/PKG-05-runbook.md)
+
+### Resposta à revisão técnica do PR #14
+
+**85% ponderado e 14/16 subtarefas com evidência de aceite local.** N1 30/30, N2 30/30, N3 15/30, N4 10/10. O PR permanece em rascunho com N3.3 e N3.4 abertas. O registro de fechamento do PKG-04 vem da main em `9864958f`, integrado à branch do PR por `e745b15`.
+
+| Subtarefa | Estado | Implementação e evidência |
+| --- | --- | --- |
+| N2.1 | Aceite local comprovado | `ebc299d` e `6f33edb`. O smoke conferiu OCR em PDF de imagem e texto/células/slides de DOC/XLS/PPT gerados a partir de fixtures sintéticas. Conversor e OCR ficam em processo separado. Arquivos malformados foram recusados. `599fa14` acrescentou OCR por página e fixture mista. |
+| N2.4 | Aceite local comprovado | `11ff0f2`, `5ab9528`, `6f33edb`. BGE-M3 no Ollama em CPU, 1.024 dimensões, vetores gravados em pgvector. Concorrência da configuração, troca atômica e preservação do perfil anterior após incompatibilidade foram exercitadas. Os provedores autenticados aprovados permanecem na matriz normativa. |
+| N3.3 | Em validação | `1e3c627` e `e25e072`. Rotação e revogação de credenciais cifradas vinculadas a um agente C1. Drive e Graph têm adaptadores de ACL com interseção no servidor. A cobertura equivalente de ACL dos demais provedores e os ensaios G4 continuam abertos. |
+| N3.4 | Em validação | `8bee6d7`, `5ab9528`, `adbb854`, `599fa14`. Checkpoints nativos do Drive e do Graph, exclusão prioritária, confirmação de sinais e webhooks de GitHub/GitLab/Bitbucket. Permanecem abertos os webhooks nativos fora do Git e os fluxos nativos específicos dos outros provedores. |
+
+**G1/G3 comprovados na rodada `6f33edb`.** Os três checks passaram. O smoke aprovou seis cenários Playwright em **5,7 s** e rodou as regressões PKG-01 a PKG-04. Recuperação da ingestão em **6.541 ms**, **19 segmentos** e **quatro pedidos concorrentes**. Backup em **9 s**, restauração em **13 s**. O BGE-M3 (digest `7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab`) produziu similaridade **0,8681** para a paráfrase pt/en e **0,2950** para o texto distinto em **1.920 ms**. Valores medidos em fixtures descartáveis. [Checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46053774259) · [Smoke, G3 e modelo](https://github.com/giovanimarin/knowledge-manager/actions/runs/46053774259/artifacts/15226450347) · [Auditoria/SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/46053774259/artifacts/15224439965)
+
+A rodada `8bee6d7` detectou descarte dos cabeçalhos de assinatura pelo proxy. A correção encaminha a prova apenas nas rotas de webhook. O verify local do código `599fa14` executou **30 testes em 6,08 s**, sem falhas ou omissões, incluindo recuperação de cursor após falha de leitura.
+
+**G4 autenticado pendente.** Fixtures de protocolo e credenciais sintéticas cobrem as operações locais identificadas no runbook. Nenhuma conta autenticada de provedor foi usada nesta rodada. [Contratos](packages/PKG-05-contracts.md) · [Runbook e matriz por provedor](packages/PKG-05-runbook.md)
+
+### Revisão por provedor do head `8d07ff6`
+
+A nova rodada preserva o aceite local de N2.1/N2.4. N3.3 e N3.4 seguem em validação. A última linha de base aceita permanece **85% ponderado (14/16)** até a conclusão da nova rodada e dos critérios abertos.
+
+| Provedor | Prova local positiva e negativa adicionada |
+| --- | --- |
+| GitHub | Checkpoint da árvore, permissão efetiva da conta e recusa após perda de leitura. Teste HTTP em `tests/ingestion-git.test.mjs`. |
+| GitLab | Commit pinado, páginas da árvore e associação ativa com papel suficiente. Guest e associação ausente não autorizam importação. |
+| Bitbucket | Commit e permissões vinculados ao repositório e à conta. Inventário incompleto e continuação fora da origem são recusados. |
+| Drive | Changes API, token do canal e replay por número da mensagem. Quarentena de derivados com cursor e geração da credencial. |
+| SharePoint | Graph delta, ID repetido seguido de tombstone e verificação de ACL mesmo sem URL de download. Validação da inscrição e do clientState no smoke. |
+| OneDrive | Graph delta e negação de ACL ou continuação fora da origem. Validação da inscrição e do clientState no smoke. |
+| Confluence | Polling CQL e prova de leitura para cada conta mapeada. Negativa ou resposta ambígua bloqueiam a importação. |
+| Notion | Polling paginado, confirmação direta da ausência e HMAC. Acesso à integração não autoriza pessoas locais. |
+| S3 | HEAD público para a versão listada, GET condicional, retry e evento SNS assinado. Versão divergente e acesso privado impedem a disponibilização. |
+| GCS | HEAD público para a geração listada, retry e Pub/Sub autenticado. Geração divergente, audiência inválida e acesso privado seguem em quarentena. |
+
+`4b98be4`, `803910c`, `14a408b`, `f4a5f62`, `f6fd7f3` e `8ed2a77` registram a implementação. O primeiro smoke encontrou uma sessão C ausente na fase compartilhada. A fixture passou a validar os IDs de fontes de A na fase dedicada, usando a sessão real de C. Os testes de rotação e revogação usam credenciais sintéticas para cada provedor. [Falha intermediária](https://github.com/giovanimarin/knowledge-manager/actions/runs/46161600837) · [Contrato](packages/PKG-05-contracts.md) · [Matriz operacional](packages/PKG-05-runbook.md#cobertura-por-provedor)
+
+G4 autenticação real **pendente para todos os provedores**. Continua aberta a entrega autorizada de conteúdo quando as fontes Notion, S3 ou GCS não oferecem uma prova suficiente de ACL privada na operação configurada. O polling CQL é o caminho atual para Confluence com credenciais REST.
+
+Na rodada `f6fd7f3`, os **três checks obrigatórios passaram**, com regressões PKG-01 a PKG-04, seis cenários Playwright em **7,3 s** e isolamento bidirecional A/B/C. O smoke verificou credenciais sintéticas de todos os provedores, Graph básico, canais Drive, HMAC Notion, SNS assinado, Pub/Sub com OIDC e a quarentena em resposta à negativa de origem. A ingestão recuperou em **6.995 ms** com **20 segmentos** e **quatro pedidos concorrentes**. Backup em **10 s** e restauração em **14 s**. [Três checks](https://github.com/giovanimarin/knowledge-manager/actions/runs/46161889506) · [Smoke e G3](https://github.com/giovanimarin/knowledge-manager/actions/runs/46161889506/artifacts/15270187794) · [Auditoria e SBOM](https://github.com/giovanimarin/knowledge-manager/actions/runs/46161889506/artifacts/15270505905)
+
+Os commits `8ed2a77`, `f8332a3` e `40c40d1` reforçam reconciliação Graph/Notion, mapeamento gerenciado e repetição do mesmo recibo após perda de resposta. O `pnpm verify` local de `40c40d1` passou com **38 testes**, em **6,88 s** na etapa de testes, sem falhas ou omissões.

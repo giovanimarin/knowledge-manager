@@ -1,0 +1,522 @@
+import { readWithRetry, publicObject } from "./transport.mjs";
+import { createRequire } from "node:module";
+const sanitize = createRequire(
+  new URL("../../apps/api/package.json", import.meta.url),
+)("sanitize-html");
+const defaults = {
+  drive: "https://www.googleapis.com",
+  sharepoint: "https://graph.microsoft.com",
+  onedrive: "https://graph.microsoft.com",
+  gcs: "https://storage.googleapis.com",
+  notion: "https://api.notion.com",
+};
+const plainFile = /\.(?:txt|md|markdown|csv)$/i;
+const validString = (value) => {
+  if (typeof value !== "string" || !value)
+    throw new Error("Invalid cloud inventory field");
+  return value;
+};
+const htmlText = (html) =>
+  sanitize(html, { allowedTags: [], allowedAttributes: {} })
+    .replace(/\s+/g, " ")
+    .trim();
+
+async function boundedBody(response) {
+  if (!response.body) throw new Error("Missing cloud source body");
+  let size = 0;
+  const parts = [];
+  for await (const part of response.body) {
+    size += part.length;
+    if (size > 4 * 1024 * 1024)
+      throw new Error("Cloud response exceeds bounds");
+    parts.push(Buffer.from(part));
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(parts));
+}
+
+export class CloudSourceStatus extends Error {
+  constructor(status) {
+    super("Cloud source unavailable: " + status);
+    this.status = status;
+  }
+}
+
+export async function cloudSource({
+  provider,
+  container,
+  origin = defaults[provider],
+  credential,
+  nativeCursor,
+  trackNativeCursor = false,
+  principalIds = [],
+  request = fetch,
+}) {
+  if (
+    ![
+      "drive",
+      "sharepoint",
+      "onedrive",
+      "gcs",
+      "notion",
+      "confluence",
+    ].includes(provider) ||
+    !origin ||
+    !container
+  )
+    throw new Error("Invalid cloud source");
+  const upstream = new URL(origin);
+  if (
+    !["http:", "https:"].includes(upstream.protocol) ||
+    upstream.username ||
+    upstream.password ||
+    upstream.pathname !== "/" ||
+    upstream.search ||
+    upstream.hash
+  )
+    throw new Error("Invalid upstream origin");
+  const delta =
+    !!nativeCursor && ["drive", "sharepoint", "onedrive"].includes(provider);
+  const removed = new Set();
+  const files = [],
+    body = new Map();
+  const visited = new Set();
+  const scope = encodeURIComponent(container);
+  let checkpoint;
+  const remember = (key, version, title, locator) => {
+    if (files.length >= 150 || body.has(key))
+      throw new Error("Cloud inventory bound or duplicate");
+    files.push({ remoteKey: key, version, title });
+    body.set(key, locator);
+  };
+  async function get(
+    path,
+    { json = true, method = "GET", params, signed = false } = {},
+  ) {
+    const url = new URL(path, upstream);
+    if (signed) {
+      if (
+        url.protocol !== "https:" ||
+        url.username ||
+        url.password ||
+        !/(?:\.sharepoint\.com|\.1drv\.com|\.sharepoint\.us)$/i.test(
+          url.hostname,
+        )
+      )
+        throw new Error("Untrusted signed download origin");
+    } else if (url.origin !== upstream.origin)
+      throw new Error("Cross-origin cloud continuation");
+    const result = await readWithRetry(request, url, {
+      method,
+      headers: {
+        Accept: json ? "application/json" : "text/plain",
+        ...(!signed && ["sharepoint", "onedrive"].includes(provider)
+          ? {
+              Prefer:
+                "deltashowsharingchanges, deltashowremovedasdeleted, deltatraversepermissiongaps",
+            }
+          : {}),
+        ...(!signed && credential ? { Authorization: credential } : {}),
+        ...(provider === "notion" ? { "Notion-Version": "2022-06-28" } : {}),
+        ...(params ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(params ? { body: JSON.stringify(params) } : {}),
+    });
+    if (!result.ok) throw new CloudSourceStatus(result.status);
+    const source = await boundedBody(result);
+    return json ? JSON.parse(source) : source;
+  }
+  function cursor(value) {
+    if (visited.has(value) || visited.size >= 25)
+      throw new Error("Unbounded cloud pagination");
+    visited.add(value);
+  }
+
+  function rememberDrive(file) {
+    const key = validString(file.id),
+      name = validString(file.name);
+    const docs = file.mimeType === "application/vnd.google-apps.document";
+    if (!docs && !plainFile.test(name)) return false;
+    const locator = "/drive/v3/files/" + encodeURIComponent(key);
+    remember(
+      key,
+      validString(file.version ?? file.modifiedTime),
+      name,
+      docs ? locator + "/export?mimeType=text%2Fplain" : locator + "?alt=media",
+    );
+    return true;
+  }
+
+  function driveShared(query) {
+    if (container !== "all") {
+      query.set("driveId", container);
+      query.set("supportsAllDrives", "true");
+      query.set("includeItemsFromAllDrives", "true");
+    }
+    return query;
+  }
+
+  if (provider === "drive" && delta) {
+    let token = nativeCursor;
+    const changes = new Map();
+    do {
+      cursor(token);
+      const query = driveShared(
+        new URLSearchParams({
+          pageToken: token,
+          includeRemoved: "true",
+          pageSize: "100",
+          fields:
+            "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,version,modifiedTime,mimeType,trashed))",
+        }),
+      );
+      const result = await get("/drive/v3/changes?" + query);
+      if (!Array.isArray(result.changes))
+        throw new Error("Incomplete Drive changes");
+      for (const change of result.changes) {
+        const key = validString(change.fileId);
+        if (changes.size >= 150 && !changes.has(key))
+          throw new Error("Drive change inventory exceeds bounds");
+        changes.set(key, change);
+      }
+      checkpoint = result.newStartPageToken ?? checkpoint;
+      token = result.nextPageToken ?? "";
+    } while (token);
+    if (!checkpoint) throw new Error("Drive changes have no final token");
+    for (const [key, change] of changes)
+      if (
+        change.removed ||
+        change.file?.trashed ||
+        !change.file ||
+        change.file.id !== key ||
+        !rememberDrive(change.file)
+      )
+        removed.add(key);
+  } else if (provider === "drive" || provider === "gcs") {
+    if (provider === "drive" && trackNativeCursor) {
+      const query = new URLSearchParams();
+      if (container !== "all") {
+        query.set("driveId", container);
+        query.set("supportsAllDrives", "true");
+      }
+      checkpoint = validString(
+        (await get("/drive/v3/changes/startPageToken?" + query)).startPageToken,
+      );
+    }
+    let token = "";
+    do {
+      cursor(token);
+      if (provider === "drive") {
+        const query = new URLSearchParams({
+          q: "trashed = false",
+          pageSize: "100",
+          fields: "nextPageToken,files(id,name,version,modifiedTime,mimeType)",
+        });
+        if (container !== "all") {
+          query.set("corpora", "drive");
+          query.set("driveId", container);
+          query.set("includeItemsFromAllDrives", "true");
+          query.set("supportsAllDrives", "true");
+        }
+        if (token) query.set("pageToken", token);
+        const result = await get("/drive/v3/files?" + query);
+        if (!Array.isArray(result.files) || result.incompleteSearch)
+          throw new Error("Incomplete Drive inventory");
+        for (const file of result.files) rememberDrive(file);
+        token = result.nextPageToken ?? "";
+      } else {
+        const query = new URLSearchParams({ maxResults: "100" });
+        if (token) query.set("pageToken", token);
+        const result = await get("/storage/v1/b/" + scope + "/o?" + query);
+        if (result.items !== undefined && !Array.isArray(result.items))
+          throw new Error("Incomplete GCS inventory");
+        for (const file of result.items ?? []) {
+          const key = validString(file.name),
+            version = validString(file.generation);
+          if (plainFile.test(key))
+            remember(
+              key,
+              version,
+              key,
+              "/download/storage/v1/b/" +
+                scope +
+                "/o/" +
+                encodeURIComponent(key) +
+                "?alt=media&generation=" +
+                encodeURIComponent(version),
+            );
+        }
+        token = result.nextPageToken ?? "";
+      }
+    } while (token);
+  } else if (provider === "sharepoint" || provider === "onedrive") {
+    // A complete snapshot avoids interpreting a partial delta page as a deletion.
+    const initial = "/v1.0/drives/" + scope + "/root/delta";
+    let next = nativeCursor ?? initial;
+    function checkedLink(value) {
+      const parsed = new URL(validString(value), upstream);
+      if (
+        parsed.origin !== upstream.origin ||
+        parsed.pathname !== initial ||
+        parsed.username ||
+        parsed.password ||
+        parsed.hash
+      )
+        throw new Error("Graph continuation outside source");
+      return parsed.href;
+    }
+    const changes = new Map();
+    while (next) {
+      cursor(next);
+      const result = await get(
+        delta || next !== initial ? checkedLink(next) : next,
+      );
+      if (!Array.isArray(result.value))
+        throw new Error("Incomplete Graph inventory");
+      for (const file of result.value) {
+        if (!file.file && !file.deleted) continue;
+        const key = validString(file.id);
+        if (changes.size >= 150 && !changes.has(key))
+          throw new Error("Graph change inventory exceeds bounds");
+        changes.set(key, file);
+      }
+      checkpoint = result["@odata.deltaLink"] ?? checkpoint;
+      next = result["@odata.nextLink"] ?? "";
+    }
+    for (const [key, file] of changes) {
+      if (file.deleted || !plainFile.test(file.name ?? "")) {
+        if (delta) removed.add(key);
+      } else {
+        remember(
+          key,
+          validString(file.eTag ?? file.cTag),
+          validString(file.name),
+          { graphItem: key, signed: file["@microsoft.graph.downloadUrl"] },
+        );
+      }
+    }
+    if (!checkpoint) throw new Error("Graph inventory has no final token");
+  } else if (provider === "confluence") {
+    const cql = "type=page AND space='" + container.replaceAll("'", "") + "'";
+    let next =
+      "/wiki/rest/api/content/search?" +
+      new URLSearchParams({ cql, expand: "version,body.storage", limit: "50" });
+    while (next) {
+      const page = new URL(next, upstream);
+      if (
+        page.origin !== upstream.origin ||
+        page.pathname !== "/wiki/rest/api/content/search" ||
+        page.username ||
+        page.password
+      )
+        throw new Error("Confluence continuation outside source");
+      cursor(page.href);
+      const result = await get(page.href);
+      if (!Array.isArray(result.results))
+        throw new Error("Incomplete Confluence inventory");
+      for (const file of result.results)
+        remember(
+          validString(file.id),
+          String(file.version?.number ?? ""),
+          validString(file.title),
+          { inline: htmlText(validString(file.body?.storage?.value)) },
+        );
+      next = result._links?.next ?? "";
+      if (next.startsWith("/rest/")) next = "/wiki" + next;
+    }
+  } else {
+    let token;
+    do {
+      cursor(token ?? "");
+      const result = await get("/v1/search", {
+        method: "POST",
+        params: {
+          filter: { property: "object", value: "page" },
+          page_size: 100,
+          ...(token ? { start_cursor: token } : {}),
+        },
+      });
+      if (!Array.isArray(result.results))
+        throw new Error("Incomplete Notion inventory");
+      for (const page of result.results) {
+        if (page.archived || page.in_trash) continue;
+        const key = validString(page.id);
+        const title =
+          Object.values(page.properties ?? {}).find(
+            (property) => property.type === "title",
+          )?.title ??
+          page.title ??
+          [];
+        remember(
+          key,
+          validString(page.last_edited_time),
+          title.map((part) => part.plain_text ?? "").join("") || key,
+          { notion: key },
+        );
+      }
+      token = result.has_more ? validString(result.next_cursor) : undefined;
+    } while (token);
+  }
+  return {
+    files,
+    checkpoint,
+    delta,
+    removed: [...removed],
+    ...(provider === "notion"
+      ? {
+          async confirmMissing(key) {
+            if (!/^[a-f0-9-]{32,36}$/i.test(key))
+              throw new Error("Invalid Notion page ID");
+            try {
+              const page = await get("/v1/pages/" + encodeURIComponent(key));
+              return page.archived === true || page.in_trash === true;
+            } catch (error) {
+              if (error instanceof CloudSourceStatus && error.status === 404)
+                return true;
+              throw error;
+            }
+          },
+        }
+      : {}),
+    async allowsSpace(file) {
+      if (!principalIds.length) return false;
+      if (provider === "gcs")
+        return publicObject(
+          request,
+          upstream,
+          container,
+          file.remoteKey,
+          "x-goog-generation",
+          file.version,
+          "?generation=" + encodeURIComponent(file.version),
+        );
+      const expected = new Set(principalIds);
+      let grants;
+      try {
+        if (provider === "confluence") {
+          for (const principal of expected) {
+            const result = await get(
+              "/wiki/rest/api/content/" +
+                encodeURIComponent(file.remoteKey) +
+                "/permission/check",
+              {
+                method: "POST",
+                params: {
+                  subject: { type: "user", identifier: principal },
+                  operation: "read",
+                },
+              },
+            );
+            if (result.hasPermission !== true) return false;
+          }
+          return true;
+        }
+        if (provider === "drive") {
+          const result = await get(
+            "/drive/v3/files/" +
+              encodeURIComponent(file.remoteKey) +
+              "/permissions?fields=nextPageToken,permissions(id,type,role,deleted,permissionDetails)&supportsAllDrives=true",
+          );
+          if (result.nextPageToken || !Array.isArray(result.permissions))
+            return false;
+          grants = result.permissions.map((permission) =>
+            permission.type === "user" &&
+            !permission.deleted &&
+            !permission.permissionDetails?.some((detail) => detail.inherited)
+              ? permission.id
+              : null,
+          );
+        } else if (provider === "sharepoint" || provider === "onedrive") {
+          const result = await get(
+            "/v1.0/drives/" +
+              scope +
+              "/items/" +
+              encodeURIComponent(file.remoteKey) +
+              "/permissions",
+          );
+          if (result["@odata.nextLink"] || !Array.isArray(result.value))
+            return false;
+          grants = result.value.map((permission) =>
+            !permission.inheritedFrom &&
+            !permission.link &&
+            !permission.invitation &&
+            !permission.expirationDateTime &&
+            !permission.grantedToIdentitiesV2?.length
+              ? permission.grantedToV2?.user?.id
+              : null,
+          );
+        } else return false;
+      } catch {
+        return false;
+      }
+      const actual = new Set(grants);
+      return (
+        actual.size === expected.size &&
+        [...actual].every((principal) => expected.has(principal))
+      );
+    },
+    async read(file) {
+      const item = body.get(file.remoteKey);
+      if (typeof item === "string") return get(item, { json: false });
+      if (item?.inline !== undefined) return item.inline;
+      if (item?.signed) return get(item.signed, { json: false, signed: true });
+      if (item?.graphItem) {
+        const current = await get(
+          "/v1.0/drives/" +
+            scope +
+            "/items/" +
+            encodeURIComponent(item.graphItem),
+        );
+        if ((current.eTag ?? current.cTag) !== file.version)
+          throw new Error("Graph object changed while reconciling");
+        return get(validString(current["@microsoft.graph.downloadUrl"]), {
+          json: false,
+          signed: true,
+        });
+      }
+      if (item?.notion) {
+        const queue = [item.notion],
+          seen = new Set(),
+          paragraphs = [];
+        while (queue.length) {
+          const block = queue.shift();
+          if (seen.has(block) || seen.size >= 75)
+            throw new Error("Notion block tree exceeds bounds");
+          seen.add(block);
+          let token;
+          do {
+            const result = await get(
+              "/v1/blocks/" +
+                encodeURIComponent(block) +
+                "/children?" +
+                new URLSearchParams({
+                  page_size: "100",
+                  ...(token ? { start_cursor: token } : {}),
+                }),
+            );
+            if (!Array.isArray(result.results))
+              throw new Error("Incomplete Notion block tree");
+            for (const child of result.results) {
+              if (child.has_children && child.type !== "child_page")
+                queue.push(validString(child.id));
+              const value = child[child.type]?.rich_text;
+              if (Array.isArray(value))
+                paragraphs.push(
+                  value.map((part) => part.plain_text ?? "").join(""),
+                );
+            }
+            if (paragraphs.length > 500)
+              throw new Error("Notion document exceeds bounds");
+            const next = result.has_more
+              ? validString(result.next_cursor)
+              : undefined;
+            if (next && next === token)
+              throw new Error("Repeated Notion page token");
+            token = next;
+          } while (token);
+        }
+        return paragraphs.join("\n");
+      }
+      throw new Error("Missing cloud source object");
+    },
+  };
+}

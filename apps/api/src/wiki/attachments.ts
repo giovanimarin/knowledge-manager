@@ -30,6 +30,8 @@ export function attachmentInput(body: Record<string, unknown>) {
   } else if (extension === "pdf") valid = matches(bytes, "%PDF-");
   else if (["docx", "xlsx", "pptx", "zip"].includes(extension))
     valid = matches(bytes, "PK\x03\x04") || matches(bytes, "PK\x05\x06");
+  else if (["doc", "xls", "ppt"].includes(extension))
+    valid = bytes.subarray(0, 8).equals(Buffer.from("d0cf11e0a1b11ae1", "hex"));
   else if (extension === "png") valid = matches(bytes, "\x89PNG\r\n\x1a\n");
   else if (["jpg", "jpeg"].includes(extension))
     valid = matches(bytes, "\xff\xd8\xff");

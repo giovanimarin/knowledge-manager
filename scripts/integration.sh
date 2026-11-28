@@ -29,6 +29,9 @@ cleanup() {
       compose down -v --remove-orphans >/dev/null 2>&1
     fi
   done
+  if [[ -n "${embed_pid:-}" ]]; then kill "$embed_pid" 2>/dev/null || true; fi
+  if [[ -n "${embed_container:-}" ]]; then docker rm -f -v "$embed_container" >/dev/null 2>&1 || true; fi
+  if [[ -n "${ocr_pid:-}" ]]; then kill "$ocr_pid" 2>/dev/null || true; fi
   bash scripts/wiki-clamd.sh stop "$KM_SCAN_DIR"
   if [[ -f "$KM_SCAN_DIR/clamd.log" ]]; then cp "$KM_SCAN_DIR/clamd.log" "$artifacts/clamd.log"; fi
   rm -rf -- "$scratch"
@@ -36,6 +39,66 @@ cleanup() {
 }
 trap cleanup EXIT
 bash scripts/wiki-clamd.sh start "$KM_SCAN_DIR"
+export KM_OCR_DIR="$scratch/ocr"
+export KM_INGEST_OCR_SOCKET=/km-ocr/ocr.sock
+mkdir -m 755 "$KM_OCR_DIR"
+tesseract --version
+node scripts/ingest-ocr.mjs "$KM_OCR_DIR/ocr.sock" --fixture > "$artifacts/ocr.log" 2>&1 &
+ocr_pid=$!
+for _ in {1..40}; do
+  [[ -S "$KM_OCR_DIR/ocr.sock" && "$(stat -c %a "$KM_OCR_DIR/ocr.sock")" == 666 ]] && break
+  sleep .1
+done
+[[ -S "$KM_OCR_DIR/ocr.sock" ]]
+[[ "$(stat -c %a "$KM_OCR_DIR/ocr.sock")" == 666 ]]
+export KM_INGEST_NATIVE_FIXTURES="$scratch/legacy"
+mkdir "$KM_INGEST_NATIVE_FIXTURES"
+for pair in doc:odt xls:ods ppt:odp; do
+  legacy="${pair%:*}"
+  open_format="${pair#*:}"
+  libreoffice "-env:UserInstallation=file://$scratch/office-fixtures" --headless \
+    --convert-to "$legacy" --outdir "$KM_INGEST_NATIVE_FIXTURES" \
+    "contracts/fixtures/ingestion/legacy.$open_format"
+  [[ -s "$KM_INGEST_NATIVE_FIXTURES/legacy.$legacy" ]]
+  code="$(printf 'invalid legacy Office' | curl --unix-socket "$KM_OCR_DIR/ocr.sock" \
+    -sS -o /dev/null -w '%{http_code}' --data-binary @- "http://localhost/$legacy")"
+  [[ "$code" == 503 ]]
+done
+code="$(printf '%%PDF-invalid' | curl --unix-socket "$KM_OCR_DIR/ocr.sock" \
+  -sS -o /dev/null -w '%{http_code}' -H 'X-KM-OCR-Pages: 1' --data-binary @- http://localhost/pdf)"
+[[ "$code" == 503 ]]
+
+export KM_INGEST_EMBED_SOCKET=/km-ocr/embedding.sock
+export KM_INGEST_EMBED_MODEL=bge-m3
+export KM_INGEST_EMBED_DIMENSION=1024
+embed_container="$prefix-embedding"
+docker run -d --name "$embed_container" -p 127.0.0.1::11434 -e OLLAMA_NUM_PARALLEL=1 \
+  ollama/ollama:0.11.10@sha256:a5409cb903d30f9cd67e9f430dd336ddc9274e16fd78f75b675c42065991b4fd
+embed_port="$(docker port "$embed_container" 11434/tcp | cut -d: -f2)"
+for _ in {1..40}; do
+  curl --noproxy '*' -fsS "http://127.0.0.1:$embed_port/api/tags" >/dev/null && break
+  sleep .5
+done
+docker exec "$embed_container" ollama pull "$KM_INGEST_EMBED_MODEL" > "$artifacts/embedding-model.log" 2>&1
+docker exec "$embed_container" ollama list >> "$artifacts/embedding-model.log"
+curl --noproxy '*' -fsS "http://127.0.0.1:$embed_port/api/tags" | node -e '
+let body = "";
+process.stdin.setEncoding("utf8").on("data", value => body += value).on("end", () => {
+  const model = JSON.parse(body).models.find(entry => entry.name === "bge-m3:latest");
+  if (model?.digest !== "7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab") process.exit(1);
+  console.log("Modelo bge-m3 " + model.digest);
+});
+' | tee "$artifacts/embedding-digest.log"
+node scripts/ingest-embedding.mjs "$KM_OCR_DIR/embedding.sock" "$embed_port" "$KM_INGEST_EMBED_MODEL" --fixture &
+embed_pid=$!
+for _ in {1..40}; do
+  [[ -S "$KM_OCR_DIR/embedding.sock" && "$(stat -c %a "$KM_OCR_DIR/embedding.sock")" == 666 ]] && break
+  sleep .1
+done
+[[ -S "$KM_OCR_DIR/embedding.sock" ]]
+[[ "$(stat -c %a "$KM_OCR_DIR/embedding.sock")" == 666 ]]
+node scripts/ingestion/semantic-fixture.mjs "$KM_OCR_DIR/embedding.sock" \
+  "$KM_INGEST_EMBED_MODEL" "$KM_INGEST_EMBED_DIMENSION" "$artifacts/embedding-g3.json"
 
 http_status() {
   curl --noproxy '*' -sS --max-time 8 -o "$scratch/response.json" -w '%{http_code}' "$KM_BASE_URL/$1"
@@ -49,7 +112,7 @@ echo "Isolamento Compose confirmado: rede interna e bridge web sem NAT"
 make smoke
 node scripts/identity-integration.mjs primary "$scratch/identity"
 KM_WIKI_G3_REPORT="$artifacts/wiki-g3.json" node scripts/wiki-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
-KM_EDITOR_G3_REPORT="$artifacts/editor-g3.json" node scripts/editor-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
+KM_EDITOR_G3_REPORT="$artifacts/editor-g3.json" KM_INGEST_G3_REPORT="$artifacts/ingestion-g3.json" node scripts/editor-integration.mjs "$scratch/identity" "$scratch/wiki-browser"
 compose up -d --wait --no-build --scale api=2 --scale worker=2
 for index in 1 2; do
   compose exec -T --index "$index" api node -e 'fetch("http://127.0.0.1:3000/readyz").then(r=>{if(!r.ok) process.exit(1)})'

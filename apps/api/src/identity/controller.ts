@@ -1,3 +1,4 @@
+import { ingest } from "../ingestion/api.js";
 import { EditorStore } from "../editor/store.js";
 import { Lifecycle } from "../editor/lifecycle.js";
 import { All, Body, Controller, Inject, Req, Res } from "@nestjs/common";
@@ -34,7 +35,7 @@ export class IdentityController {
 
   @All("*path")
   async handle(
-    @Req() req: IncomingMessage,
+    @Req() req: IncomingMessage & { rawBody?: Buffer },
     @Res() res: ServerResponse,
     @Body() raw: unknown,
   ) {
@@ -42,6 +43,20 @@ export class IdentityController {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     try {
       const result = await this.dispatch(req, pathname, raw);
+      if (
+        pathname.startsWith("/v1/ingestion/hooks/") &&
+        result &&
+        typeof result === "object" &&
+        "graphChallenge" in result &&
+        typeof result.graphChallenge === "string"
+      ) {
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(result.graphChallenge);
+        return;
+      }
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
@@ -80,7 +95,22 @@ export class IdentityController {
     }
   }
 
-  private async dispatch(req: IncomingMessage, pathname: string, raw: unknown) {
+  private async dispatch(
+    req: IncomingMessage & { rawBody?: Buffer },
+    pathname: string,
+    raw: unknown,
+  ) {
+    const hook = /^\/v1\/ingestion\/hooks\/([^/]+)\/([^/]+)$/.exec(pathname);
+    if (hook && req.method === "POST")
+      return this.sessions.ingestionHook(
+        id(hook[1]),
+        id(hook[2]),
+        req.headers,
+        req.rawBody,
+        new URL(req.url ?? "/", "http://localhost").searchParams.get(
+          "validationToken",
+        ),
+      );
     const key = `${req.method} ${pathname}`;
     const body =
       ["POST", "PUT", "PATCH"].includes(req.method ?? "") ||
@@ -128,6 +158,16 @@ export class IdentityController {
         5,
       );
     }
+    if (pathname.startsWith("/v1/ingestion/"))
+      return this.sessions.withActor(auth, (tx, tenant, actor) =>
+        ingest(
+          new EditorStore(tx, tenant, actor),
+          req.method ?? "",
+          pathname,
+          body,
+          new URL(req.url ?? "/", "http://localhost").searchParams,
+        ),
+      );
     if (pathname.startsWith("/v1/editor/"))
       return this.sessions.withActor(auth, (tx, tenant, actor) =>
         new Lifecycle(new EditorStore(tx, tenant, actor)).dispatch(

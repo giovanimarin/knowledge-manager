@@ -76,7 +76,13 @@ export async function assess(
       union select r.id,r.parent_id,r.classification from km.identity_resources r join lineage l on l.parent_id=r.id
       where r.tenant_id=${tenant}
     ) select g.effect from km.identity_grants g join km.identity_roles r on (g.tenant_id,g.role_id)=(r.tenant_id,r.id)
-    where g.tenant_id=${tenant} and (g.member_id=${member} or g.client_id=${client} or g.group_id in (select id from groups))
+    where not exists(select 1 from km.ingest_origin_denials d join lineage l on l.id=d.page_id
+       where d.tenant_id=${tenant})
+    and not exists(select from km.ingest_origin_acl a join lineage l on l.id=a.page_id
+      join km.ingest_sources s on (s.tenant_id,s.id)=(a.tenant_id,a.source_id)
+      where a.tenant_id=${tenant} and (s.revoked_at is not null or
+        not(coalesce(${member}::uuid=any(a.member_ids),false) or coalesce(${client}::uuid=s.runner_id,false))))
+    and g.tenant_id=${tenant} and (g.member_id=${member} or g.client_id=${client} or g.group_id in (select id from groups))
       and ${request.action}=any(r.actions)
       and (g.resource_id is null or g.resource_id in (select id from lineage))
       and (${request.resource}::uuid is null or exists(select from lineage))

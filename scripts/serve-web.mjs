@@ -18,7 +18,9 @@ const server = createServer(async (request, response) => {
         request.url,
       )
         ? 12 * 1024 * 1024
-        : 100 * 1024;
+        : /^\/v1\/ingestion\/sources\/[^/]+\/sync$/.test(request.url)
+          ? 2 * 1024 * 1024
+          : 100 * 1024;
     try {
       const chunks = [];
       let size = 0;
@@ -31,7 +33,25 @@ const server = createServer(async (request, response) => {
         chunks.push(chunk);
       }
       const headers = {};
-      for (const name of ["authorization", "content-type"]) {
+      const headerNames = /^\/v1\/ingestion\/hooks\//.test(request.url)
+        ? [
+            "content-type",
+            "x-hub-signature-256",
+            "x-github-delivery",
+            "x-gitlab-token",
+            "idempotency-key",
+            "x-hub-signature",
+            "x-request-uuid",
+            "x-notion-signature",
+            "authorization",
+            "x-goog-channel-token",
+            "x-goog-channel-id",
+            "x-goog-resource-id",
+            "x-goog-resource-state",
+            "x-goog-message-number",
+          ]
+        : ["authorization", "content-type"];
+      for (const name of headerNames) {
         const value = request.headers[name];
         if (typeof value === "string") headers[name] = value;
       }

@@ -23,7 +23,7 @@ const layers = {
     "yjs",
     "reflect-metadata",
   ]),
-  "apps/worker": entrypoints,
+  "apps/worker": new Set([...entrypoints, "fflate", "saxes", "unpdf"]),
   "apps/web": new Set(["react", "react-dom/client", "yjs", "mermaid"]),
   "packages/foundation": new Set([
     "@opentelemetry/api",

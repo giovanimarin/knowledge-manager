@@ -45,9 +45,11 @@ async function main() {
     FoundationModule,
     {
       logger: ["warn", "error"],
+      rawBody: true,
     },
   );
   api.useBodyParser("json", { limit: "12mb" });
+  api.useBodyParser("text", { limit: "256kb", type: "text/plain" });
   await api.listen(3000, "0.0.0.0");
   const closeSockets = installCollaboration(
     api.getHttpServer(),

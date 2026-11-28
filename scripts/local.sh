@@ -35,7 +35,7 @@ JS
 }
 
 migrate() {
-  local checksum identity_checksum worker_checksum wiki_checksum wiki_objects_checksum wiki_uploads_checksum editor_checksum
+  local checksum identity_checksum worker_checksum wiki_checksum wiki_objects_checksum wiki_uploads_checksum editor_checksum ingest_checksum ingest_profiles_checksum ingest_sources_checksum ingest_credentials_checksum ingest_acl_checksum
   checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v1-up.sql")).digest("hex"))')"
   identity_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v2-up.sql")).digest("hex"))')"
   worker_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v3-up.sql")).digest("hex"))')"
@@ -43,7 +43,12 @@ migrate() {
   wiki_objects_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v5-up.sql")).digest("hex"))')"
   wiki_uploads_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v6-up.sql")).digest("hex"))')"
   editor_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v7-up.sql")).digest("hex"))')"
-  db -v "editor_checksum=$editor_checksum" -v "wiki_uploads_checksum=$wiki_uploads_checksum" -v "wiki_objects_checksum=$wiki_objects_checksum" -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
+  ingest_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v8-up.sql")).digest("hex"))')"
+  ingest_profiles_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v9-up.sql")).digest("hex"))')"
+  ingest_sources_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v10-up.sql")).digest("hex"))')"
+  ingest_credentials_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v11-up.sql")).digest("hex"))')"
+  ingest_acl_checksum="$(node -e 'const fs=require("node:fs"); process.stdout.write(require("node:crypto").createHash("sha256").update(fs.readFileSync("infra/v12-up.sql")).digest("hex"))')"
+  db -v "ingest_acl_checksum=$ingest_acl_checksum" -v "ingest_credentials_checksum=$ingest_credentials_checksum" -v "ingest_sources_checksum=$ingest_sources_checksum" -v "ingest_profiles_checksum=$ingest_profiles_checksum" -v "ingest_checksum=$ingest_checksum" -v "editor_checksum=$editor_checksum" -v "wiki_uploads_checksum=$wiki_uploads_checksum" -v "wiki_objects_checksum=$wiki_objects_checksum" -v "wiki_checksum=$wiki_checksum" -v "worker_checksum=$worker_checksum" -v "checksum=$checksum" -v "identity_checksum=$identity_checksum" -f /km-infra/migrate.sql
 }
 
 verify_fixture() {

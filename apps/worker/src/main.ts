@@ -1,3 +1,4 @@
+import { runIngestion } from "./ingestion/worker.js";
 import { createServer } from "node:http";
 import { hostname } from "node:os";
 import {
@@ -20,6 +21,7 @@ import { processTenantProbe } from "./tenant-probe.js";
 
 const telemetry = startTelemetry();
 const dependencies = new Dependencies();
+const stopIngestion = runIngestion(dependencies);
 const queue = new Queue(queueName, { connection: redisOptions() });
 const leases = new WorkerLeases(dependencies);
 const worker = new Worker(
@@ -84,6 +86,7 @@ server.listen(3001, "0.0.0.0", () =>
 
 async function shutdown() {
   server.close();
+  await stopIngestion();
   await worker.close();
   await queue.close();
   await dependencies.close();

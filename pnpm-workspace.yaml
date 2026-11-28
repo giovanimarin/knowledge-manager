@@ -8,6 +8,7 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: false
   protobufjs: false
+  mermaid>katex: 0.18.2
 minimumReleaseAgeExclude:
   - vite@8.4.0
   - "@nestjs/common@12.6.3"
@@ -16,3 +17,4 @@ minimumReleaseAgeExclude:
   - unpdf@2.2.3
 overrides:
   protobufjs: 8.8.1
+  mermaid>katex: 0.18.2

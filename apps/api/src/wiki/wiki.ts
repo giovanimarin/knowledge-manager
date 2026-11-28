@@ -413,6 +413,14 @@ export class Wiki {
     };
   }
 
+  private async assertRestorable(keys: string[]) {
+    const blocked =
+      await sql`select 1 from km.ingest_origin_denials where page_id=any(${keys}::uuid[]) limit 1`.execute(
+        this.tx,
+      );
+    if (blocked.rows.length) throw missing();
+  }
+
   private async spaceLifecycle(key: string, restore: boolean) {
     await this.require("content.acl.manage", key);
     const row = (
@@ -431,6 +439,7 @@ export class Wiki {
         this.tx,
       )
     ).rows;
+    if (restore) await this.assertRestorable(children.map((child) => child.id));
     for (const child of children)
       await this.require("content.acl.manage", child.id);
     await sql`update km.wiki_pages set deleted_batch=case when ${restore} then null else ${key}::uuid end,
@@ -1028,6 +1037,7 @@ export class Wiki {
       )
     ).rows;
     if (!batch.length) throw missing();
+    await this.assertRestorable(batch.map((item) => item.id));
     for (const item of batch) await this.require("content.acl.manage", item.id);
     await sql`update km.wiki_pages set deleted_batch=null,deleted_at=null where deleted_batch=${key}`.execute(
       this.tx,
