@@ -35,9 +35,9 @@ const records = await guardProviderAccess(connection, cursor, async () => {
     credential: connection.credential ?? KM_GIT_SOURCE_TOKEN,
   });
   return pushSnapshot({
-    snapshot: connection.nativePrincipals
+    snapshot: connection.credentialVersion
       ? { ...snapshot, before: nativeCursor }
-      : { ...snapshot, checkpoint: undefined, allowsSpace: undefined },
+      : { ...snapshot, checkpoint: undefined },
     nativePrincipals: connection.nativePrincipals,
     signals,
     expectedSyncCursor: cursor,
@@ -45,7 +45,7 @@ const records = await guardProviderAccess(connection, cursor, async () => {
     source,
     base: KM_BASE_URL,
     session: KM_SOURCE_SESSION,
-    mapped: process.env.KM_GIT_SOURCE_ACL === "mapped-space",
+    mapped: false,
   });
 });
 console.log(JSON.stringify({ provider, records }));

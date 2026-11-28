@@ -11,7 +11,6 @@ const {
   KM_SOURCE_SESSION,
   KM_CLOUD_SOURCE_AUTH,
   KM_CLOUD_SOURCE_ORIGIN,
-  KM_CLOUD_NATIVE_PRINCIPALS,
   KM_CLOUD_FULL_RECONCILE,
 } = process.env;
 if (
@@ -34,20 +33,11 @@ const signals = (await connection.request("/signals")).map(
   (signal) => signal.delivery,
 );
 const { nativeCursor = null, cursor } = await connection.request("/objects");
-const principalIds =
-  connection.nativePrincipals ?? JSON.parse(KM_CLOUD_NATIVE_PRINCIPALS ?? "[]");
-if (
-  !Array.isArray(principalIds) ||
-  principalIds.length > 100 ||
-  !principalIds.every(
-    (value) => typeof value === "string" && value.length && value.length <= 256,
-  )
-)
-  throw new Error("Invalid native ACL mapping");
+const principalIds = connection.nativePrincipals ?? [];
 const options = {
   provider,
   container,
-  origin: KM_CLOUD_SOURCE_ORIGIN,
+  origin: provider === "confluence" ? KM_CLOUD_SOURCE_ORIGIN : undefined,
   credential: connection.credential ?? KM_CLOUD_SOURCE_AUTH,
   nativeCursor: KM_CLOUD_FULL_RECONCILE === "1" ? null : nativeCursor,
   principalIds,

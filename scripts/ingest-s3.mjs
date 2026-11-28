@@ -6,13 +6,8 @@ import { s3Source } from "./ingestion/s3.mjs";
 import { pushSnapshot } from "./ingestion/push.mjs";
 
 const [bucket, source] = process.argv.slice(2);
-const {
-  AWS_REGION,
-  KM_BASE_URL,
-  KM_SOURCE_SESSION,
-  KM_S3_ENDPOINT,
-  KM_S3_SOURCE_ACL,
-} = process.env;
+const { AWS_REGION, KM_BASE_URL, KM_SOURCE_SESSION, KM_S3_ENDPOINT } =
+  process.env;
 if (
   !bucket ||
   !source ||
@@ -52,9 +47,7 @@ const records = await guardProviderAccess(connection, cursor, async () => {
     attestAcl: Boolean(connection.nativePrincipals?.length),
   });
   return pushSnapshot({
-    snapshot: connection.nativePrincipals
-      ? snapshot
-      : { ...snapshot, allowsSpace: undefined },
+    snapshot,
     signals,
     nativePrincipals: connection.nativePrincipals,
     source,
@@ -62,7 +55,7 @@ const records = await guardProviderAccess(connection, cursor, async () => {
     session: KM_SOURCE_SESSION,
     expectedSyncCursor: cursor,
     expectedCredentialVersion: connection.credentialVersion,
-    mapped: KM_S3_SOURCE_ACL === "mapped-space",
+    mapped: false,
   });
 });
 console.log(JSON.stringify({ provider: "s3", records }));
