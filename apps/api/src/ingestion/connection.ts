@@ -111,9 +111,9 @@ export async function manageConnection(
     const secret =
       body.webhookSecret == null ? null : string(body.webhookSecret, 1024);
     if (
-      nativeHookProviders.has(provider)
-        ? !secret || secret.length < 32
-        : secret !== null
+      secret !== null
+        ? !nativeHookProviders.has(provider) || secret.length < 32
+        : ["github", "gitlab", "bitbucket"].includes(provider)
     )
       throw new IdentityError(400);
     const encrypted =

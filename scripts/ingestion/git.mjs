@@ -1,3 +1,4 @@
+import { readWithRetry } from "./transport.mjs";
 // Returns a complete bounded snapshot. Partial listings never imply deletion.
 const origins = {
   github: "https://api.github.com",
@@ -19,6 +20,7 @@ export async function gitSource({
   ref,
   origin = origins[provider],
   credential,
+  attestAcl = false,
   request = fetch,
 }) {
   if (!Object.hasOwn(origins, provider) || !origin || !repository || !ref)
@@ -28,7 +30,9 @@ export async function gitSource({
     !["https:", "http:"].includes(upstream.protocol) ||
     upstream.username ||
     upstream.password ||
-    upstream.pathname !== "/"
+    upstream.pathname !== "/" ||
+    upstream.search ||
+    upstream.hash
   )
     throw new Error("Invalid upstream origin");
   const repo = pathFor(repository);
@@ -37,13 +41,11 @@ export async function gitSource({
     const url = new URL(path, upstream);
     if (url.origin !== upstream.origin)
       throw new Error("Cross-origin continuation");
-    const response = await request(url, {
+    const response = await readWithRetry(request, url, {
       headers: {
         Accept: mode === "json" ? "application/json" : "text/plain",
         ...(credential ? { Authorization: "Bearer " + credential } : {}),
       },
-      redirect: "error",
-      signal: AbortSignal.timeout(12000),
     });
     if (!response.ok)
       throw new Error("Git source unavailable: " + response.status);
@@ -65,6 +67,25 @@ export async function gitSource({
       headers: response.headers,
     };
   }
+  const projectPath =
+    provider === "github"
+      ? "/repos/" + repo
+      : provider === "gitlab"
+        ? "/api/v4/projects/" + encodeURIComponent(repository)
+        : "/2.0/repositories/" + repo;
+  let acl;
+  async function allowsSpace() {
+    if (!attestAcl) return false;
+    const result = await (acl ??= get(projectPath).catch(() => null));
+    if (!result) return false;
+    const { value } = result;
+    // Public repository metadata is positive evidence. Private repository membership
+    // may include inherited grants and requires a complete effective ACL.
+    if (provider === "github")
+      return value.visibility === "public" && value.private === false;
+    if (provider === "gitlab") return value.visibility === "public";
+    return value.is_private === false;
+  }
   function keep(records, entry) {
     if (!supported.test(entry.remoteKey)) return;
     if (records.length >= 150)
@@ -84,6 +105,8 @@ export async function gitSource({
         keep(files, { remoteKey: text(item.path), version: text(item.sha) });
     return {
       files,
+      allowsSpace,
+      checkpoint: text(value.sha),
       async read(file) {
         const { value } = await get(
           prefix + "blobs/" + encodeURIComponent(file.version),
@@ -98,6 +121,7 @@ export async function gitSource({
   if (provider === "gitlab") {
     const prefix =
       "/api/v4/projects/" + encodeURIComponent(repository) + "/repository/";
+    const commit = text((await get(prefix + "commits/" + branch)).value.id);
     let page = "1";
     const visited = new Set();
     while (page) {
@@ -107,7 +131,7 @@ export async function gitSource({
       const { value, headers } = await get(
         prefix +
           "tree?recursive=true&per_page=100&ref=" +
-          branch +
+          encodeURIComponent(commit) +
           "&page=" +
           page,
       );
@@ -119,6 +143,8 @@ export async function gitSource({
     }
     return {
       files,
+      allowsSpace,
+      checkpoint: commit,
       async read(file) {
         return (
           await get(
@@ -163,6 +189,8 @@ export async function gitSource({
   }
   return {
     files,
+    allowsSpace,
+    checkpoint: commit,
     async read(file) {
       return (
         await get(prefix + pinned + "/" + pathFor(file.remoteKey), "text")

@@ -1,3 +1,4 @@
+import { publicObject } from "./transport.mjs";
 import {
   GetObjectCommand,
   ListObjectsV2Command,
@@ -9,9 +10,15 @@ export async function s3Source({
   region,
   endpoint,
   credentials,
+  attestAcl = false,
+  request = fetch,
   client: configured,
 }) {
-  if (!bucket || !region) throw new Error("Invalid S3 configuration");
+  if (
+    !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket ?? "") ||
+    !/^[a-z0-9-]+$/.test(region ?? "")
+  )
+    throw new Error("Invalid S3 configuration");
   if (endpoint) {
     const url = new URL(endpoint);
     if (
@@ -64,6 +71,17 @@ export async function s3Source({
   } while (cursor);
   return {
     files,
+    async allowsSpace(file) {
+      if (!attestAcl) return false;
+      return publicObject(
+        request,
+        endpoint ?? "https://s3." + region + ".amazonaws.com",
+        bucket,
+        file.remoteKey,
+        "etag",
+        file.version,
+      );
+    },
     async read(file) {
       const result = await client.send(
         new GetObjectCommand({

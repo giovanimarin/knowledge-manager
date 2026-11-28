@@ -42,9 +42,13 @@ const snapshot = await s3Source({
   region: AWS_REGION,
   endpoint: credentials ? undefined : KM_S3_ENDPOINT,
   credentials,
+  attestAcl: Boolean(connection.nativePrincipals?.length),
 });
 const records = await pushSnapshot({
-  snapshot,
+  snapshot: connection.nativePrincipals
+    ? snapshot
+    : { ...snapshot, allowsSpace: undefined },
+  nativePrincipals: connection.nativePrincipals,
   source,
   base: KM_BASE_URL,
   session: KM_SOURCE_SESSION,

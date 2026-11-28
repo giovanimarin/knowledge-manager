@@ -11,6 +11,7 @@ test("GitHub, GitLab and Bitbucket fixtures exercise actual HTTP reads and pinne
     const reply = (value) => res.end(JSON.stringify(value));
     if (url.pathname.includes("/trees/"))
       return reply({
+        sha: "tree-v1",
         truncated: false,
         tree: [{ path: "guide.md", type: "blob", sha: "object-v1" }],
       });
@@ -19,7 +20,10 @@ test("GitHub, GitLab and Bitbucket fixtures exercise actual HTTP reads and pinne
         encoding: "base64",
         content: Buffer.from("Ação").toString("base64"),
       });
+    if (url.pathname.endsWith("/commits/main"))
+      return reply({ id: "commit-v1" });
     if (url.pathname.endsWith("/repository/tree")) {
+      assert.equal(url.searchParams.get("ref"), "commit-v1");
       if (url.searchParams.get("page") === "1") {
         res.setHeader("x-next-page", "2");
         return reply([{ path: "guide.md", type: "blob", id: "object-v1" }]);
@@ -79,4 +83,38 @@ test("incomplete or cross-origin Git inventory fails closed", async () => {
     }),
     /continuation/,
   );
+});
+
+test("Git repos quarantine unknown and private visibility even if the connector can read", async () => {
+  for (const [provider, metadata] of [
+    ["github", { visibility: "public", private: false }],
+    ["gitlab", { visibility: "public" }],
+    ["bitbucket", { is_private: false }],
+  ]) {
+    for (const visibility of [metadata, {}, null]) {
+      const snapshot = await gitSource({
+        provider,
+        repository: "org/repo",
+        ref: "main",
+        attestAcl: true,
+        request: async (url) => {
+          if (url.pathname.includes("/trees/"))
+            return Response.json({ sha: "tree-1", truncated: false, tree: [] });
+          if (url.pathname.includes("/commits/"))
+            return Response.json({ id: "gitlab-1" });
+          if (url.pathname.endsWith("/repository/tree"))
+            return Response.json([]);
+          if (url.pathname.includes("/commit/"))
+            return Response.json({ hash: "bitbucket-1" });
+          if (url.pathname.includes("/src/"))
+            return Response.json({ values: [] });
+          return visibility
+            ? Response.json(visibility)
+            : new Response(null, { status: 403 });
+        },
+      });
+      assert.ok(snapshot.checkpoint);
+      assert.equal(await snapshot.allowsSpace(), visibility === metadata);
+    }
+  }
 });

@@ -6,7 +6,12 @@ import { IdentityError, unseal } from "../identity/security.js";
 export const hookPurpose = (tenant: string, source: string) =>
   `ingestion-webhook-v1:${tenant}:${source}`;
 
-export const nativeHookProviders = new Set(["github", "gitlab", "bitbucket"]);
+export const nativeHookProviders = new Set([
+  "github",
+  "gitlab",
+  "bitbucket",
+  "notion",
+]);
 
 function nativeDelivery(
   provider: string,
@@ -16,14 +21,24 @@ function nativeDelivery(
 ) {
   const gitlab = provider === "gitlab";
   const github = provider === "github";
-  const delivered =
-    headers[
-      github
-        ? "x-github-delivery"
-        : gitlab
-          ? "idempotency-key"
-          : "x-request-uuid"
-    ];
+  const notion = provider === "notion";
+  let delivered: unknown;
+  if (notion) {
+    try {
+      delivered = (JSON.parse(body.toString("utf8")) as { id?: unknown })?.id;
+    } catch {
+      throw new IdentityError(400);
+    }
+  } else {
+    delivered =
+      headers[
+        github
+          ? "x-github-delivery"
+          : gitlab
+            ? "idempotency-key"
+            : "x-request-uuid"
+      ];
+  }
   const delivery =
     typeof delivered === "string"
       ? delivered.replace(/^\{([a-f0-9-]+)\}$/i, "$1").toLowerCase()
@@ -40,7 +55,9 @@ function nativeDelivery(
         ? "x-hub-signature-256"
         : gitlab
           ? "x-gitlab-token"
-          : "x-hub-signature"
+          : notion
+            ? "x-notion-signature"
+            : "x-hub-signature"
     ];
   if (typeof signature !== "string") throw new IdentityError(401);
   if (gitlab) {

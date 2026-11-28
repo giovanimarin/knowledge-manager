@@ -232,3 +232,89 @@ test("Drive applies an ordered change feed and persists the native watermark", a
   assert.equal(resumed.files[0].remoteKey, "live");
   assert.equal(resumed.checkpoint, "drive-next");
 });
+
+test("Confluence checks effective read for every mapped user and rejects denial or ambiguous ACL", async () => {
+  for (const proof of [true, false, undefined]) {
+    const observed = [];
+    const source = await cloudSource({
+      provider: "confluence",
+      container: "DOCS",
+      origin: "https://fixture.example",
+      principalIds: ["mapped-a", "mapped-b"],
+      request: async (url, options) => {
+        if (url.pathname.endsWith("/permission/check")) {
+          const payload = JSON.parse(options.body);
+          assert.equal(options.method, "POST");
+          assert.equal(payload.operation, "read");
+          observed.push(payload.subject.identifier);
+          return Response.json({
+            hasPermission:
+              payload.subject.identifier === "mapped-a" ? true : proof,
+          });
+        }
+        return Response.json({
+          results: [
+            {
+              id: "1",
+              version: { number: 3 },
+              title: "Guia",
+              body: { storage: { value: "<p>Texto</p>" } },
+            },
+          ],
+        });
+      },
+    });
+    assert.equal(await source.allowsSpace(source.files[0]), proof === true);
+    assert.deepEqual(observed, ["mapped-a", "mapped-b"]);
+  }
+});
+
+test("object storage requires anonymous access to the same version and retries transient upstream failures", async () => {
+  for (const provider of ["s3", "gcs"]) {
+    for (const status of [200, 403, 412]) {
+      const header = provider === "s3" ? "etag" : "x-goog-generation";
+      const version = provider === "s3" ? '"v1"' : "441";
+      let tries = 0;
+      const request = async (url, options) => {
+        if (options.method === "HEAD") {
+          assert.equal(options.headers?.Authorization, undefined);
+          assert.equal(options.redirect, "error");
+          assert.equal(url.pathname, "/fixtures/folder/a.txt");
+          if (++tries === 1) return new Response(null, { status: 503 });
+          return new Response(null, { status, headers: { [header]: version } });
+        }
+        return Response.json({
+          items: [{ name: "folder/a.txt", generation: version }],
+        });
+      };
+      let snapshot;
+      if (provider === "s3") {
+        const { s3Source } = await import("../scripts/ingestion/s3.mjs");
+        snapshot = await s3Source({
+          bucket: "fixtures",
+          region: "us-east-1",
+          attestAcl: true,
+          request,
+          client: {
+            async send() {
+              return { Contents: [{ Key: "folder/a.txt", ETag: version }] };
+            },
+          },
+        });
+      } else {
+        snapshot = await cloudSource({
+          provider,
+          container: "fixtures",
+          principalIds: ["authorized"],
+          credential: "Bearer synthetic",
+          request,
+        });
+      }
+      assert.equal(
+        await snapshot.allowsSpace(snapshot.files[0]),
+        status === 200,
+      );
+      assert.equal(tries, 2);
+    }
+  }
+});

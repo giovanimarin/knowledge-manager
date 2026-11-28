@@ -9,6 +9,7 @@ const {
   KM_CLOUD_SOURCE_AUTH,
   KM_CLOUD_SOURCE_ORIGIN,
   KM_CLOUD_NATIVE_PRINCIPALS,
+  KM_CLOUD_FULL_RECONCILE,
 } = process.env;
 if (
   !KM_BASE_URL ||
@@ -26,6 +27,9 @@ const connection = await sourceConnection({
   provider,
   target: container,
 });
+const signals = (await connection.request("/signals")).map(
+  (signal) => signal.delivery,
+);
 const { nativeCursor = null, cursor } = await connection.request("/objects");
 const principalIds =
   connection.nativePrincipals ?? JSON.parse(KM_CLOUD_NATIVE_PRINCIPALS ?? "[]");
@@ -42,7 +46,7 @@ const options = {
   container,
   origin: KM_CLOUD_SOURCE_ORIGIN,
   credential: connection.credential ?? KM_CLOUD_SOURCE_AUTH,
-  nativeCursor,
+  nativeCursor: KM_CLOUD_FULL_RECONCILE === "1" ? null : nativeCursor,
   principalIds,
   trackNativeCursor: true,
 };
@@ -62,6 +66,7 @@ try {
 const records = await pushSnapshot({
   snapshot: { ...snapshot, before: nativeCursor },
   source,
+  signals,
   base: KM_BASE_URL,
   session: KM_SOURCE_SESSION,
   mapped: false,

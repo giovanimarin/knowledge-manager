@@ -1,3 +1,4 @@
+import { readWithRetry, publicObject } from "./transport.mjs";
 import { createRequire } from "node:module";
 const sanitize = createRequire(
   new URL("../../apps/api/package.json", import.meta.url),
@@ -104,7 +105,7 @@ export async function cloudSource({
         throw new Error("Untrusted signed download origin");
     } else if (url.origin !== upstream.origin)
       throw new Error("Cross-origin cloud continuation");
-    const result = await request(url, {
+    const result = await readWithRetry(request, url, {
       method,
       headers: {
         Accept: json ? "application/json" : "text/plain",
@@ -119,8 +120,6 @@ export async function cloudSource({
         ...(params ? { "Content-Type": "application/json" } : {}),
       },
       ...(params ? { body: JSON.stringify(params) } : {}),
-      redirect: "error",
-      signal: AbortSignal.timeout(12000),
     });
     if (!result.ok) throw new CloudSourceStatus(result.status);
     const source = await boundedBody(result);
@@ -349,9 +348,37 @@ export async function cloudSource({
     removed: [...removed],
     async allowsSpace(file) {
       if (!principalIds.length) return false;
+      if (provider === "gcs")
+        return publicObject(
+          request,
+          upstream,
+          container,
+          file.remoteKey,
+          "x-goog-generation",
+          file.version,
+          "?generation=" + encodeURIComponent(file.version),
+        );
       const expected = new Set(principalIds);
       let grants;
       try {
+        if (provider === "confluence") {
+          for (const principal of expected) {
+            const result = await get(
+              "/wiki/rest/api/content/" +
+                encodeURIComponent(file.remoteKey) +
+                "/permission/check",
+              {
+                method: "POST",
+                params: {
+                  subject: { type: "user", identifier: principal },
+                  operation: "read",
+                },
+              },
+            );
+            if (result.hasPermission !== true) return false;
+          }
+          return true;
+        }
         if (provider === "drive") {
           const result = await get(
             "/drive/v3/files/" +

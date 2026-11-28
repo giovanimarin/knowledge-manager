@@ -21,15 +21,19 @@ const connection = await sourceConnection({
 const signals = (await connection.request("/signals")).map(
   (signal) => signal.delivery,
 );
-const { cursor } = await connection.request("/objects");
+const { cursor, nativeCursor } = await connection.request("/objects");
 const snapshot = await gitSource({
   provider,
   repository,
   ref,
+  attestAcl: Boolean(connection.nativePrincipals?.length),
   credential: connection.credential ?? KM_GIT_SOURCE_TOKEN,
 });
 const records = await pushSnapshot({
-  snapshot,
+  snapshot: connection.nativePrincipals
+    ? { ...snapshot, before: nativeCursor }
+    : { ...snapshot, checkpoint: undefined, allowsSpace: undefined },
+  nativePrincipals: connection.nativePrincipals,
   signals,
   expectedSyncCursor: cursor,
   expectedCredentialVersion: connection.credentialVersion,

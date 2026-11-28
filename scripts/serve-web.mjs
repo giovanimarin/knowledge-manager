@@ -42,6 +42,7 @@ const server = createServer(async (request, response) => {
             "idempotency-key",
             "x-hub-signature",
             "x-request-uuid",
+            "x-notion-signature",
           ]
         : ["authorization", "content-type"];
       for (const name of headerNames) {
